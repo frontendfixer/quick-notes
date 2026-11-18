@@ -1,4 +1,40 @@
-import { createEffect, createSignal, For, lazy, onCleanup, onMount, Show, Suspense } from 'solid-js'
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowDownWideNarrow,
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  ChevronsUpDown,
+  CircleAlert,
+  Cloud,
+  Download,
+  FileDown,
+  FileText,
+  HardDrive,
+  LockKeyhole,
+  LogOut,
+  NotebookPen,
+  Pin,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Trash2,
+  UserRound,
+  WifiOff,
+} from 'lucide-solid'
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  lazy,
+  onCleanup,
+  onMount,
+  Show,
+  Suspense,
+} from 'solid-js'
 import { render } from 'solid-js/web'
 import { registerSW } from 'virtual:pwa-register'
 import {
@@ -30,6 +66,19 @@ type PendingEdit = {
   generation: string
 }
 const label = (title: string) => title.trim() || 'Untitled'
+const views = [
+  ['active', 'All notes', NotebookPen],
+  ['archived', 'Archive', Archive],
+  ['trash', 'Trash', Trash2],
+  ['offline', 'On this device', HardDrive],
+] as const
+
+function belongsTo(note: Pick<Summary, 'deleted' | 'archived'>, view: View) {
+  return (
+    view === 'offline' ||
+    (view === 'trash' ? note.deleted : !note.deleted && note.archived === (view === 'archived'))
+  )
+}
 
 function download(name: string, data: unknown) {
   const url = URL.createObjectURL(
@@ -83,13 +132,15 @@ function App() {
   let retryDelay = 1000
   const pending = new Map<string, PendingEdit>()
   let documentReader: (() => NoteFields['document']) | undefined
+  let searchInput: HTMLInputElement | undefined
 
   const ordered = <T,>(work: () => Promise<T>) => {
     const result = queue.then(work)
     queue = result.catch(() => undefined)
     return result
   }
-  const draftFor = (id: string) => drafts().find((draft) => draft.id === id)
+  const draftById = createMemo(() => new Map(drafts().map((draft) => [draft.id, draft])))
+  const draftFor = (id: string) => draftById().get(id)
   const activeDraft = () => draftFor(open()?.id ?? '')
   const canEdit = () => writable() && !fields().deleted && !signingOut() && !creating()
 
@@ -194,6 +245,12 @@ function App() {
   async function select(id: string) {
     const account = owner()
     if (!account) return
+    if (open()?.id === id) {
+      ++selection
+      setOpening(false)
+      setShowEditor(true)
+      return
+    }
     const request = ++selection
     setOpening(true)
     setNotice('')
@@ -237,7 +294,10 @@ function App() {
           !draftFor(id) &&
           !open()?.composing
         ) {
-          loadEditor(id, account, (cached ?? note).revision, cached ?? note)
+          const latest = cached ?? note
+          if (open()?.id !== id || latest.revision > (open()?.base ?? 0)) {
+            loadEditor(id, account, latest.revision, latest)
+          }
         }
       }
     } catch {
@@ -260,7 +320,7 @@ function App() {
     editEpoch++
     const currentFields = { ...fields(), ...overrides, title: title() }
     const reader = documentReader
-    setFields(currentFields)
+    if (Object.keys(overrides).length) setFields(currentFields)
     pending.set(current.id, {
       owner: current.owner,
       id: current.id,
@@ -285,7 +345,7 @@ function App() {
         const edits = Array.from(pending.values())
         for (const item of edits) {
           const current = open()
-          await local.change(item.owner, item.id, (previous) => ({
+          const saved = await local.change(item.owner, item.id, (previous) => ({
             ...previous,
             owner: item.owner,
             id: item.id,
@@ -295,10 +355,18 @@ function App() {
             base: previous ? previous.base : current?.id === item.id ? current.base : item.base,
             error: undefined,
           }))
+          if (saved && owner() === item.owner) {
+            ++draftEpoch
+            setDrafts((current) => {
+              const index = current.findIndex(({ id }) => id === saved.id)
+              return index === -1
+                ? [saved, ...current]
+                : current.map((item, i) => (i === index ? saved : item))
+            })
+          }
           if (pending.get(item.id) === item) pending.delete(item.id)
           if (open()?.id === item.id && !pending.has(item.id)) setStatus('Saved on device')
         }
-        await loadLocal()
         if (notice() === storageNotice) setNotice('')
         return true
       } catch {
@@ -393,6 +461,21 @@ function App() {
             },
             open()?.id,
           )
+          if (owner() === id) {
+            const { document: _document, ...metadata } = sent.mutation.fields
+            const updated = {
+              ...metadata,
+              id: draft.id,
+              revision: ack.revision,
+              updatedAt: ack.updatedAt,
+            }
+            setNotes((previous) => {
+              const exists = previous.some(({ id }) => id === updated.id)
+              if (!belongsTo(updated, view())) return previous.filter(({ id }) => id !== updated.id)
+              if (exists) return previous.map((note) => (note.id === updated.id ? updated : note))
+              return query().trim() ? previous : [updated, ...previous]
+            })
+          }
           const current = open()
           if (current?.owner === id && current.id === draft.id) {
             current.base = ack.revision
@@ -680,6 +763,18 @@ function App() {
       if (document.visibilityState === 'visible') void refresh()
       else if (pending.size) void flushEdits()
     }
+    const focusSearch = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'k' &&
+        searchInput?.isConnected
+      ) {
+        event.preventDefault()
+        setShowEditor(false)
+        searchInput.focus()
+      }
+    }
+    window.addEventListener('keydown', focusSearch)
     const resume = () => {
       void refresh()
     }
@@ -692,6 +787,7 @@ function App() {
     document.addEventListener('visibilitychange', visible)
     onCleanup(() => {
       clearInterval(interval)
+      window.removeEventListener('keydown', focusSearch)
       sessionChanges.close()
       window.removeEventListener('online', resume)
       window.removeEventListener('offline', resume)
@@ -701,33 +797,38 @@ function App() {
     })
   })
 
-  const visibleNotes = () => {
+  const visibleNotes = createMemo(() => {
     const cachedView = view() === 'offline' || unavailable() || mustSignIn()
     if (!cachedView && query().trim()) return notes()
-    const pendingNotes: Summary[] = []
+    const ordered = new Map(notes().map((note) => [note.id, note]))
+    const added: Summary[] = []
     for (const draft of drafts()) {
-      const f = draft.fields
-      if (
-        view() === 'offline' ||
-        (view() === 'trash' ? f.deleted : !f.deleted && f.archived === (view() === 'archived'))
-      ) {
-        const { document: _document, ...metadata } = f
-        pendingNotes.push({
-          ...metadata,
-          id: draft.id,
-          revision: draft.base ?? 0,
-          updatedAt: draft.changedAt,
-        })
+      if (!belongsTo(draft.fields, view())) {
+        ordered.delete(draft.id)
+        continue
       }
+      const { document: _document, ...metadata } = draft.fields
+      const previous = ordered.get(draft.id)
+      const summary = {
+        ...metadata,
+        id: draft.id,
+        revision: draft.base ?? 0,
+        updatedAt: previous?.updatedAt ?? draft.changedAt,
+      }
+      if (previous) ordered.set(draft.id, summary)
+      else added.push(summary)
     }
-    const editing = new Set(drafts().map((draft) => draft.id))
-    pendingNotes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    return [...pendingNotes, ...notes().filter((note) => !editing.has(note.id))]
-  }
+    return [...added, ...ordered.values()]
+  })
+  const visibleById = createMemo(() => new Map(visibleNotes().map((note) => [note.id, note])))
+  const visibleIds = createMemo(() => visibleNotes().map((note) => note.id), undefined, {
+    equals: (previous, next) =>
+      previous.length === next.length && previous.every((id, index) => id === next[index]),
+  })
 
   const reauthForm = () => (
     <form class="reauth" onSubmit={signIn}>
-      <span>Sign in to resume uploads.</span>
+      <strong>Sign in to resume sync</strong>
       <input
         name="email"
         type="email"
@@ -750,86 +851,128 @@ function App() {
     </form>
   )
 
+  const updateNotice = (mobile = false) => (
+    <Show when={update()}>
+      <div classList={{ message: true, 'update-message': true, 'mobile-update': mobile }}>
+        <RefreshCw size={16} />
+        <span>An update is ready.</span>
+        <button
+          onClick={async () => {
+            if (await flushEdits()) await updateWorker(true)
+          }}
+        >
+          Restart to update
+        </button>
+      </div>
+    </Show>
+  )
+
+  const saveText = () =>
+    activeDraft()?.conflict ? 'Conflict' : activeDraft()?.error ? 'Save rejected' : status()
+  const saveLabel = () => {
+    const state = saveText()
+    if (state === 'Editing' || state === 'Saved on device') {
+      return unavailable() || mustSignIn() ? 'On this device' : 'Saving…'
+    }
+    return state === 'Saved to server' ? 'Up to date' : state
+  }
+  const saveProblem = () => ['Conflict', 'Save rejected', 'Save failed'].includes(saveText())
+  const newNote = () => void create()
+  const canCreate = () => writable() && !creating() && !signingOut()
+  const activeView = () => views.find(([key]) => key === view())!
+  const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+  const emptyHeadings: Record<View, string> = {
+    active: 'No notes yet',
+    archived: 'Archive is empty',
+    trash: 'Trash is empty',
+    offline: 'No notes on this device',
+  }
+
   return (
     <div class="app">
       <Show
         when={owner()}
         fallback={
           <main class="login">
-            <div class="brand">
-              <img src="/icon-192.png" alt="" /> Quick Notes
-            </div>
-            <Show when={ready()} fallback={<p>Opening…</p>}>
-              <form onSubmit={signIn}>
+            <section class="login-card" aria-label="Quick Notes sign-in">
+              <div class="brand">
+                <span class="brand-mark">
+                  <NotebookPen size={19} />
+                </span>
+                Quick Notes
+              </div>
+              <Show
+                when={ready()}
+                fallback={
+                  <p class="muted" role="status">
+                    Opening Quick Notes…
+                  </p>
+                }
+              >
                 <h1>Sign in</h1>
-                <label>
-                  Email
-                  <input name="email" type="email" autocomplete="username" required />
-                </label>
-                <label>
-                  Password
-                  <input name="password" type="password" autocomplete="current-password" required />
-                </label>
-                <button class="primary" disabled={signingIn() || unavailable()}>
-                  {signingIn() ? 'Signing in…' : 'Sign in'}
-                </button>
-              </form>
-              <Show when={unavailable()}>
-                <p>Connect to sign in on this device.</p>
+                <p class="login-description">Open your private notes on this device.</p>
+                <form onSubmit={signIn}>
+                  <label>
+                    Email
+                    <input name="email" type="email" autocomplete="username" required />
+                  </label>
+                  <label>
+                    Password
+                    <input
+                      name="password"
+                      type="password"
+                      autocomplete="current-password"
+                      required
+                    />
+                  </label>
+                  <button class="primary login-submit" disabled={signingIn() || unavailable()}>
+                    {signingIn() ? 'Signing in…' : 'Sign in'}
+                    <ArrowRight size={17} />
+                  </button>
+                </form>
+                <Show when={unavailable()}>
+                  <p class="muted">Connect to sign in on this device.</p>
+                </Show>
               </Show>
-            </Show>
-            <Show when={notice()}>
-              <p role="alert">{notice()}</p>
-            </Show>
+              <Show when={notice()}>
+                <p class="inline-error" role="alert">
+                  {notice()}
+                </p>
+              </Show>
+            </section>
           </main>
         }
       >
         <aside classList={{ sidebar: true, 'mobile-hidden': showEditor() }}>
-          <div class="sidebar-header">
+          <header class="sidebar-header">
             <div class="brand">
-              <img src="/icon-192.png" alt="" /> Quick Notes
+              <span class="brand-mark">
+                <NotebookPen size={19} />
+              </span>
+              Quick Notes
             </div>
             <button
-              class="primary"
-              onClick={() => void create()}
-              disabled={!writable() || creating() || signingOut()}
+              class="primary new-note"
+              aria-label="New note"
+              onClick={newNote}
+              disabled={!canCreate()}
             >
-              + New
+              <Plus size={17} />
+              <span>New</span>
             </button>
-          </div>
+          </header>
           <Show when={mustSignIn() && !showEditor()}>{reauthForm()}</Show>
-          <nav aria-label="Note views">
-            <For
-              each={
-                [
-                  ['active', 'Notes'],
-                  ['archived', 'Archive'],
-                  ['trash', 'Trash'],
-                  ['offline', 'On device'],
-                ] as const
-              }
-            >
-              {([key, name]) => (
-                <button
-                  aria-pressed={view() === key}
-                  onClick={() => {
-                    setView(key)
-                    setNotes([])
-                    void safeList()
-                  }}
-                >
-                  {name}
-                </button>
-              )}
-            </For>
-          </nav>
           <Show when={authorized() && !unavailable() && view() !== 'offline'}>
             <div class="search">
+              <Search size={17} />
               <input
                 type="search"
                 placeholder="Search notes"
                 aria-label="Search notes"
                 maxlength="150"
+                ref={(node) => {
+                  searchInput = node
+                }}
                 value={query()}
                 onInput={(event) => {
                   setQuery(event.currentTarget.value)
@@ -838,22 +981,51 @@ function App() {
                   listTimer = setTimeout(() => void safeList(), 220)
                 }}
               />
-              <select
-                aria-label="Sort notes"
-                value={sort()}
-                onChange={(event) => {
-                  setSort(event.currentTarget.value)
-                  void safeList()
-                }}
-              >
-                <option value="updated">Recent</option>
-                <option value="title">Title</option>
-              </select>
+              <kbd aria-hidden="true">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} K</kbd>
             </div>
           </Show>
+          {updateNotice(true)}
+          <nav aria-label="Note views">
+            <For each={views}>
+              {([key, name, Icon]) => (
+                <button
+                  aria-pressed={view() === key}
+                  onClick={() => {
+                    if (view() === key) return
+                    setView(key)
+                    setNotes([])
+                    void safeList()
+                  }}
+                >
+                  <Icon size={17} />
+                  <span>{name}</span>
+                </button>
+              )}
+            </For>
+          </nav>
+
+          <div class="list-heading">
+            <h2>{activeView()[1]}</h2>
+            <Show when={authorized() && !unavailable() && view() !== 'offline'}>
+              <label class="sort-control">
+                <ArrowDownWideNarrow size={15} />
+                <select
+                  aria-label="Sort notes"
+                  value={sort()}
+                  onChange={(event) => {
+                    setSort(event.currentTarget.value)
+                    void safeList()
+                  }}
+                >
+                  <option value="updated">Recent</option>
+                  <option value="title">Title</option>
+                </select>
+              </label>
+            </Show>
+          </div>
           <div class="notes">
             <Show when={!showEditor() && notice()}>
-              <p class="muted" role="alert">
+              <p class="inline-error" role="alert">
                 {notice()}
               </p>
             </Show>
@@ -863,185 +1035,299 @@ function App() {
               </p>
             </Show>
             <Show when={unavailable()}>
-              <p class="muted">Offline · showing notes on this device</p>
+              <p class="offline-notice">
+                <WifiOff size={15} />
+                Offline · showing notes on this device
+              </p>
             </Show>
             <For
-              each={visibleNotes()}
-              fallback={<p class="muted">{ready() ? 'No notes here.' : 'Opening…'}</p>}
+              each={visibleIds()}
+              fallback={
+                <div class="list-empty">
+                  <FileText size={21} />
+                  <p>
+                    {ready()
+                      ? query().trim() && !unavailable() && view() !== 'offline'
+                        ? 'No matching notes'
+                        : emptyHeadings[view()]
+                      : 'Loading notes…'}
+                  </p>
+                </div>
+              }
             >
-              {(note) => (
-                <button
-                  class="note-row"
-                  aria-current={open()?.id === note.id ? 'true' : undefined}
-                  onClick={() => void select(note.id)}
-                >
-                  <span>{label(note.title)}</span>
-                  <small>
-                    {draftFor(note.id)?.conflict
-                      ? 'Conflict'
-                      : draftFor(note.id)
-                        ? 'Pending'
-                        : note.pinned
-                          ? 'Pinned'
-                          : ''}
-                  </small>
-                </button>
-              )}
+              {(id) => {
+                const note = () => visibleById().get(id)
+                const draft = createMemo(() => draftById().get(id))
+                const rowDate = createMemo(() => {
+                  const value = note()?.updatedAt
+                  return value ? dateFormat.format(new Date(value)) : ''
+                })
+                return (
+                  <button
+                    class="note-row"
+                    aria-current={open()?.id === id ? 'true' : undefined}
+                    aria-label={label(open()?.id === id ? title() : (note()?.title ?? ''))}
+                    onClick={() => void select(id)}
+                  >
+                    <span class="row-icon">
+                      <FileText size={16} />
+                    </span>
+                    <span class="row-copy">
+                      <strong>{label(open()?.id === id ? title() : (note()?.title ?? ''))}</strong>
+                      <small>{rowDate()}</small>
+                    </span>
+                    <span class="row-state">
+                      <Show when={draft()?.conflict}>
+                        <CircleAlert size={14} aria-label="Conflict" />
+                      </Show>
+                      <Show when={note()?.pinned}>
+                        <Pin size={14} aria-label="Pinned" />
+                      </Show>
+                    </span>
+                  </button>
+                )
+              }}
             </For>
             <Show when={next()}>
-              <button onClick={() => void safeList(true)}>Load more</button>
+              <button class="load-more" onClick={() => void safeList(true)}>
+                Load more
+                <ChevronDown size={15} />
+              </button>
             </Show>
           </div>
-          <div class="account-actions">
-            <Show when={authorized()}>
-              <a href="/api/export">Export notes</a>
-            </Show>
-            <Show when={drafts().length || status() === 'Save failed'}>
-              <button onClick={exportDrafts}>Download drafts</button>
-            </Show>
-            <button
-              onClick={() => void signOut()}
-              disabled={!writable() || signingOut() || unavailable()}
-            >
-              Sign out
-            </button>
-          </div>
+          <footer class="account-actions">
+            <details class="account-menu">
+              <summary aria-label="Workspace options">
+                <span class="account-avatar">
+                  <UserRound size={16} />
+                </span>
+                <span>Workspace</span>
+                <ChevronsUpDown size={14} class="menu-chevron" />
+              </summary>
+              <div class="account-popover">
+                <Show when={authorized()}>
+                  <a href="/api/export">
+                    <Download size={16} />
+                    Export notes
+                  </a>
+                </Show>
+                <Show when={drafts().length || status() === 'Save failed'}>
+                  <button onClick={exportDrafts}>
+                    <FileDown size={16} />
+                    Download drafts
+                  </button>
+                </Show>
+                <button
+                  onClick={() => void signOut()}
+                  disabled={!writable() || signingOut() || unavailable()}
+                >
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </div>
+            </details>
+          </footer>
         </aside>
+
         <main classList={{ workspace: true, 'mobile-hidden': !showEditor() }}>
           <Show when={mustSignIn() && showEditor()}>{reauthForm()}</Show>
           <Show when={!writable() && ready()}>
-            <p class="message">Editing is available in one tab at a time.</p>
+            <p class="message">
+              <LockKeyhole size={16} />
+              Editing is available in one tab at a time.
+            </p>
           </Show>
           <Show when={notice()}>
-            <p class="message" role="alert">
+            <p class="message inline-error" role="alert">
+              <CircleAlert size={16} />
               {notice()}
             </p>
           </Show>
-          <Show when={update()}>
-            <div class="message">
-              <button
-                onClick={async () => {
-                  if (await flushEdits()) await updateWorker(true)
-                }}
-              >
-                Restart to update
-              </button>
-            </div>
-          </Show>
+          {updateNotice()}
           <Show
             when={open()}
             keyed
             fallback={
-              <div class="empty">
-                <h1>Quick Notes</h1>
-                <p>Open a note or start a new one.</p>
-              </div>
+              <section class="empty">
+                <div class="empty-icon">
+                  <NotebookPen size={30} strokeWidth={1.6} />
+                </div>
+                <h1>Select a note</h1>
+                <p>Choose one from the sidebar or start a new note.</p>
+                <button class="secondary" onClick={newNote} disabled={!canCreate()}>
+                  <Plus size={16} />
+                  Create a note
+                </button>
+              </section>
             }
           >
             {(note) => (
-              <article class="note">
-                <div class="note-actions">
-                  <button class="back" onClick={() => setShowEditor(false)}>
-                    ‹ Notes
-                  </button>
-                  <span class="save" role="status">
-                    {activeDraft()?.conflict
-                      ? 'Conflict'
-                      : activeDraft()?.error
-                        ? 'Save rejected'
-                        : status()}
-                  </span>
-                  <Show when={status() === 'Save failed'}>
+              <>
+                <header class="note-topbar">
+                  <div class="note-location">
                     <button
-                      onClick={() => {
-                        void flushEdits().then(() => upload())
-                      }}
+                      class="icon-button back"
+                      aria-label="Back to notes"
+                      title="Back to notes"
+                      onClick={() => setShowEditor(false)}
                     >
-                      Retry save
+                      <ArrowLeft size={20} />
                     </button>
-                    <button onClick={exportDrafts}>Download draft</button>
+                    <FileText size={16} class="desktop-note-icon" />
+                    <span>
+                      {fields().deleted ? 'Trash' : fields().archived ? 'Archive' : 'Notes'}
+                    </span>
+                  </div>
+                  <div class="note-actions">
+                    <span
+                      classList={{ 'save-chip': true, 'save-problem': saveProblem() }}
+                      role="status"
+                      data-save-state={saveText()}
+                    >
+                      <Show when={saveProblem()} fallback={<Cloud size={15} />}>
+                        <CircleAlert size={15} />
+                      </Show>
+                      <span>{saveLabel()}</span>
+                    </span>
+                    <Show when={status() === 'Save failed'}>
+                      <button
+                        class="icon-button"
+                        title="Retry save"
+                        aria-label="Retry save"
+                        onClick={() => void flushEdits().then(() => upload())}
+                      >
+                        <RefreshCw size={17} />
+                      </button>
+                      <button
+                        class="icon-button"
+                        title="Download draft"
+                        aria-label="Download draft"
+                        onClick={exportDrafts}
+                      >
+                        <Download size={17} />
+                      </button>
+                    </Show>
+                    <Show
+                      when={!fields().deleted}
+                      fallback={
+                        <button
+                          class="secondary"
+                          disabled={!writable()}
+                          onClick={() => record({ deleted: false })}
+                        >
+                          <RotateCcw size={16} />
+                          Restore
+                        </button>
+                      }
+                    >
+                      <button
+                        class="icon-button"
+                        aria-pressed={fields().pinned}
+                        disabled={!canEdit()}
+                        title={fields().pinned ? 'Unpin note' : 'Pin note'}
+                        aria-label={fields().pinned ? 'Unpin note' : 'Pin note'}
+                        onClick={() => record({ pinned: !fields().pinned })}
+                      >
+                        <Pin size={18} />
+                      </button>
+                      <button
+                        class="icon-button"
+                        disabled={!canEdit()}
+                        title={fields().archived ? 'Unarchive note' : 'Archive note'}
+                        aria-label={fields().archived ? 'Unarchive note' : 'Archive note'}
+                        onClick={() => record({ archived: !fields().archived })}
+                      >
+                        <Show when={fields().archived} fallback={<Archive size={18} />}>
+                          <ArchiveRestore size={18} />
+                        </Show>
+                      </button>
+                      <button
+                        class="icon-button danger-action"
+                        title="Move to trash"
+                        aria-label="Move to trash"
+                        disabled={!canEdit()}
+                        onClick={() => record({ deleted: true })}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </Show>
+                  </div>
+                </header>
+                <article class="note">
+                  <Show when={activeDraft()?.error}>
+                    <p class="message inline-error" role="alert">
+                      <CircleAlert size={16} />
+                      {activeDraft()?.error}
+                    </p>
                   </Show>
-                  <Show
-                    when={!fields().deleted}
-                    fallback={
-                      <button disabled={!writable()} onClick={() => record({ deleted: false })}>
-                        Restore
-                      </button>
-                    }
-                  >
-                    <button
-                      disabled={!canEdit()}
-                      onClick={() => record({ pinned: !fields().pinned })}
-                    >
-                      {fields().pinned ? 'Unpin' : 'Pin'}
-                    </button>
-                    <button
-                      disabled={!canEdit()}
-                      onClick={() => record({ archived: !fields().archived })}
-                    >
-                      {fields().archived ? 'Unarchive' : 'Archive'}
-                    </button>
-                    <button disabled={!canEdit()} onClick={() => record({ deleted: true })}>
-                      Trash
-                    </button>
+                  <Show when={activeDraft()?.conflict}>
+                    {(conflict) => (
+                      <section class="conflict">
+                        <h2>
+                          <CircleAlert size={19} />
+                          This note changed on another device
+                        </h2>
+                        <p>Your draft is open below.</p>
+                        <details>
+                          <summary>Review server version</summary>
+                          <pre>
+                            {conflict().current
+                              ? label(conflict().current!.title) +
+                                '\n' +
+                                describe(conflict().current!.document)
+                              : 'No server version'}
+                          </pre>
+                        </details>
+                        <div class="conflict-actions">
+                          <button
+                            class="secondary"
+                            disabled={!writable()}
+                            onClick={() => void resolveConflict(true)}
+                          >
+                            Save draft as a new note
+                          </button>
+                          <button
+                            class="secondary"
+                            disabled={!writable()}
+                            onClick={() => void resolveConflict(false)}
+                          >
+                            Use my draft
+                          </button>
+                          <button class="secondary" onClick={exportDrafts}>
+                            <Download size={16} />
+                            Download draft
+                          </button>
+                        </div>
+                      </section>
+                    )}
                   </Show>
-                </div>
-                <Show when={activeDraft()?.error}>
-                  <p class="message" role="alert">
-                    {activeDraft()?.error}
-                  </p>
-                </Show>
-                <Show when={activeDraft()?.conflict}>
-                  {(conflict) => (
-                    <section class="conflict">
-                      <h2>Another device changed this note</h2>
-                      <p>Your draft is open below.</p>
-                      <details>
-                        <summary>Review server version</summary>
-                        <pre>
-                          {conflict().current
-                            ? label(conflict().current!.title) +
-                              '\n' +
-                              describe(conflict().current!.document)
-                            : 'No server version'}
-                        </pre>
-                      </details>
-                      <button disabled={!writable()} onClick={() => void resolveConflict(true)}>
-                        Save draft as a new note
-                      </button>
-                      <button disabled={!writable()} onClick={() => void resolveConflict(false)}>
-                        Use my draft
-                      </button>
-                      <button onClick={exportDrafts}>Download draft</button>
-                    </section>
-                  )}
-                </Show>
-                <input
-                  class="note-title"
-                  aria-label="Note title"
-                  placeholder="Untitled"
-                  value={title()}
-                  maxlength="200"
-                  readOnly={!canEdit()}
-                  onInput={(event) => {
-                    setTitle(event.currentTarget.value)
-                    record()
-                  }}
-                />
-                <Suspense fallback={<p>Opening editor…</p>}>
-                  <RichEditor
-                    initial={note.fields.document}
-                    editable={canEdit}
-                    changed={(read) => {
-                      documentReader = () => read() as NoteFields['document']
+                  <input
+                    class="note-title"
+                    aria-label="Note title"
+                    placeholder="Untitled"
+                    value={title()}
+                    maxlength="200"
+                    readOnly={!canEdit()}
+                    onInput={(event) => {
+                      setTitle(event.currentTarget.value)
                       record()
                     }}
-                    composition={(active) => {
-                      note.composing = active
-                    }}
                   />
-                </Suspense>
-              </article>
+                  <Suspense fallback={<div class="editor-loading" aria-label="Opening editor" />}>
+                    <RichEditor
+                      initial={note.fields.document}
+                      editable={canEdit}
+                      changed={(read) => {
+                        documentReader = () => read() as NoteFields['document']
+                        record()
+                      }}
+                      composition={(active) => {
+                        note.composing = active
+                      }}
+                    />
+                  </Suspense>
+                </article>
+              </>
             )}
           </Show>
         </main>

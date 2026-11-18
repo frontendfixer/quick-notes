@@ -38,10 +38,10 @@ async function signIn(tab: Page) {
   await tab.getByRole('textbox', { name: 'Email' }).fill(email)
   await tab.getByLabel('Password', { exact: true }).fill(password)
   await tab.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await tab.getByRole('button', { name: '+ New' }).waitFor()
+  await tab.getByRole('button', { name: 'New note' }).waitFor()
 }
 async function status(tab: Page, message: string) {
-  await tab.getByRole('status').filter({ hasText: message }).waitFor({ timeout: 15000 })
+  await tab.locator(`[data-save-state="${message}"]`).waitFor({ timeout: 15000 })
 }
 async function readDraftTitles(tab: Page) {
   return tab.evaluate(
@@ -77,7 +77,7 @@ try {
   if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) await page.reload()
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller))
   console.log('Service worker active')
-  await page.getByRole('button', { name: '+ New' }).click()
+  await page.getByRole('button', { name: 'New note' }).click()
   const title = page.getByRole('textbox', { name: 'Note title' })
   const body = page.getByRole('textbox', { name: 'Note content' })
   await title.fill('Travel log')
@@ -89,6 +89,28 @@ try {
   await page.getByRole('checkbox').check()
   await status(page, 'Saved to server')
   console.log('Rich text saved online')
+  const row = page.getByRole('button', { name: 'Travel log', exact: true })
+  await row.evaluate((element) => {
+    element.setAttribute('data-test-original', '')
+  })
+  await body.evaluate((element) => {
+    element.setAttribute('data-test-original', '')
+  })
+  await body.press('End')
+  const topbar = page.locator('.note-topbar')
+  const startHeight = (await topbar.boundingBox())?.height
+  await body.pressSequentially(' steadily', { delay: 100 })
+  assert.equal(await page.locator('.note-row[data-test-original]').count(), 1)
+  assert.equal(await page.locator('.tiptap[data-test-original]').count(), 1)
+  assert.equal(await body.evaluate((element) => document.activeElement === element), true)
+  assert.equal(await page.locator('.save-chip').textContent(), 'Saving…')
+  assert.equal((await topbar.boundingBox())?.height, startHeight)
+  await status(page, 'Saved to server')
+  assert.equal(await page.locator('.note-row[data-test-original]').count(), 1)
+  assert.equal(await page.locator('.tiptap[data-test-original]').count(), 1)
+  assert.equal(await body.evaluate((element) => document.activeElement === element), true)
+  console.log('Autosave kept editor focus, note row identity, and toolbar height stable')
+
   await page.getByRole('searchbox').fill('charger')
   await page.getByRole('button', { name: /Travel log/ }).waitFor()
   await page.getByRole('searchbox').clear()
@@ -148,7 +170,7 @@ try {
   const readOnly = await context.newPage()
   await readOnly.goto(origin)
   await readOnly.getByText('Editing is available in one tab at a time.').waitFor()
-  assert(await readOnly.getByRole('button', { name: '+ New' }).isDisabled())
+  assert(await readOnly.getByRole('button', { name: 'New note' }).isDisabled())
   await readOnly.close()
 
   console.log('Secondary tab stayed read-only')
@@ -157,7 +179,7 @@ try {
   await title.fill('Travel log local')
   await status(page, 'Saved on device')
   for (const name of ['Offline two', 'Offline three']) {
-    await page.getByRole('button', { name: '+ New' }).click()
+    await page.getByRole('button', { name: 'New note' }).click()
     await page.waitForFunction(
       () => document.querySelector<HTMLInputElement>('.note-title')?.value === '',
     )
@@ -191,7 +213,7 @@ try {
   assert(await phone.getByRole('checkbox').isChecked())
   await phone.getByRole('textbox', { name: 'Note title' }).fill('Travel log remote')
   await status(phone, 'Saved to server')
-  await phone.getByRole('button', { name: '‹ Notes' }).click()
+  await phone.getByRole('button', { name: 'Back to notes' }).click()
   await phone.getByRole('button', { name: /Travel log remote/ }).waitFor()
 
   console.log('Second device changed the same note')

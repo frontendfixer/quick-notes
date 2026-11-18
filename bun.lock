@@ -14,6 +14,7 @@
         "drizzle-orm": "0.45.4",
         "hono": "4.13.19",
         "idb": "8.0.4",
+        "lucide-solid": "1.75.0",
         "solid-js": "^1.9.0",
         "zod": "4.6.7",
       },
@@ -901,6 +902,8 @@
     "lodash.debounce": ["lodash.debounce@4.0.8", "", {}, "sha512-FT1yDzDYEoYWhnSGnpE/4Kj1fLZkDFyqRb7fNt6FdYOSxlUWAtp42Eh6Wb0rGIv/m9Bgo7x4GhQbm5Ys4SG5ow=="],
 
     "lru-cache": ["lru-cache@5.1.1", "", { "dependencies": { "yallist": "^3.0.2" } }, "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w=="],
+
+    "lucide-solid": ["lucide-solid@1.75.0", "", { "peerDependencies": { "solid-js": "^1.4.7" } }, "sha512-Udt2BCjNCtiWFJi2xXEc1wCL5JWNmn0Vl+b2xtz7Yxs8/F+XfpXqCsagfDu03A5kKzVPUajZYDyY+f/k27xbWw=="],
 
     "magic-string": ["magic-string@0.30.21", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.5" } }, "sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ=="],
 

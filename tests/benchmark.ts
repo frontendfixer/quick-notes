@@ -22,9 +22,9 @@ try {
   const title = 'Benchmark'
   const body = (tab: typeof page) => tab.getByRole('textbox', { name: 'Note content' })
   const save = (tab: typeof page, label: string) =>
-    tab.getByRole('status').filter({ hasText: label }).waitFor({ timeout: 15000 })
+    tab.locator(`[data-save-state="${label}"]`).waitFor({ timeout: 15000 })
   for (const sizeKiB of [10, 100]) {
-    await page.getByRole('button', { name: '+ New' }).click()
+    await page.getByRole('button', { name: 'New note' }).click()
     await page.waitForFunction(
       () => document.querySelector<HTMLInputElement>('.note-title')?.value === '',
     )
@@ -41,7 +41,7 @@ try {
       page = await context.newPage()
       const start = performance.now()
       await page.goto(origin, { waitUntil: 'domcontentloaded' })
-      await page.getByRole('button', { name: '+ New' }).waitFor()
+      await page.getByRole('button', { name: 'New note' }).waitFor()
       startup.push(performance.now() - start)
       await page.evaluate(() => {
         document.addEventListener(
@@ -74,15 +74,16 @@ try {
             requestAnimationFrame(() =>
               requestAnimationFrame(() => performance.measure('paint-proxy', 'edit')),
             )
-            const status = document.querySelector('.note .save')!
+            const status = document.querySelector('.save-chip')!
             const observe = new MutationObserver(() => {
-              if (status.textContent === 'Saved on device') performance.measure('local', 'edit')
-              if (status.textContent === 'Saved to server') {
+              if (status.getAttribute('data-save-state') === 'Saved on device')
+                performance.measure('local', 'edit')
+              if (status.getAttribute('data-save-state') === 'Saved to server') {
                 performance.measure('server', 'edit')
                 observe.disconnect()
               }
             })
-            observe.observe(status, { childList: true, subtree: true, characterData: true })
+            observe.observe(status, { attributes: true, attributeFilter: ['data-save-state'] })
           },
           { once: true, capture: true },
         )
