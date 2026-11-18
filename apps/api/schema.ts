@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import {
   boolean,
+  foreignKey,
   integer,
   index,
   jsonb,
@@ -8,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 import type { Ack, NoteFields } from '../../packages/contracts'
@@ -60,6 +62,20 @@ export const verification = pgTable('verification', {
   createdAt: date('created_at').notNull().defaultNow(),
   updatedAt: date('updated_at').notNull().defaultNow(),
 })
+export const folders = pgTable(
+  'folders',
+  {
+    id: uuid('id').notNull(),
+    owner: text('owner')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.id] }),
+    uniqueIndex('folders_owner_name').on(table.owner, sql`lower(${table.name})`),
+  ],
+)
 export const notes = pgTable(
   'notes',
   {
@@ -67,6 +83,7 @@ export const notes = pgTable(
     owner: text('owner')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    folderId: uuid('folder_id'),
     title: text('title').notNull(),
     document: jsonb('document').$type<NoteFields['document']>().notNull(),
     searchText: text('search_text').notNull(),
@@ -81,6 +98,11 @@ export const notes = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.owner, table.id] }),
+    foreignKey({
+      columns: [table.owner, table.folderId],
+      foreignColumns: [folders.owner, folders.id],
+    }),
+    index('notes_owner_folder').on(table.owner, table.folderId),
     index('notes_owner_updated').on(table.owner, table.updatedAt, table.id),
     index('notes_owner_title').on(table.owner, table.title, table.id),
     index('notes_search').using(

@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from 'idb'
-import type { Mutation, Note, NoteFields } from '../../../packages/contracts'
+import type { Mutation, Note, NoteFields, Folder } from '../../../packages/contracts'
 
 export type Draft = {
   owner: string
@@ -43,12 +43,29 @@ export const local = {
   async hideOwner() {
     await (await database()).delete('settings', 'owner')
   },
+  async folders(owner: string): Promise<Folder[]> {
+    const value = await (await database()).get('settings', 'folders:' + owner)
+    return value ? JSON.parse(value) : []
+  },
+  async cacheFolders(owner: string, folders: Folder[]) {
+    await (await database()).put('settings', JSON.stringify(folders), 'folders:' + owner)
+  },
   async drafts(owner: string) {
     return (await database()).getAllFromIndex('drafts', 'owner', owner)
   },
   async snapshots(owner: string) {
     const snapshots = await (await database()).getAllFromIndex('snapshots', 'owner', owner)
     return snapshots.map((snapshot) => snapshot.note)
+  },
+  async dropFolderSnapshots(owner: string, id: string) {
+    const tx = (await database()).transaction('snapshots', 'readwrite')
+    const entries = await tx.store.index('owner').getAll(owner)
+    await Promise.all(
+      entries
+        .filter(({ note }) => note.folderId === id)
+        .map(({ note }) => tx.store.delete([owner, note.id])),
+    )
+    await tx.done
   },
   async snapshot(owner: string, id: string) {
     return (await (await database()).get('snapshots', [owner, id]))?.note

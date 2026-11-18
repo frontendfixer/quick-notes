@@ -36,7 +36,13 @@ page.on('pageerror', (error) => errors.push(error.message))
 async function signIn(tab: Page) {
   await tab.goto(origin)
   await tab.getByRole('textbox', { name: 'Email' }).fill(email)
-  await tab.getByLabel('Password', { exact: true }).fill(password)
+  const passwordInput = tab.getByLabel('Password', { exact: true })
+  await passwordInput.fill(password)
+  await tab.getByRole('button', { name: 'Show password' }).click()
+  assert.equal(await passwordInput.getAttribute('type'), 'text')
+  assert.equal(await passwordInput.inputValue(), password)
+  await tab.getByRole('button', { name: 'Hide password' }).click()
+  assert.equal(await passwordInput.getAttribute('type'), 'password')
   await tab.getByRole('button', { name: 'Sign in', exact: true }).click()
   await tab.getByRole('button', { name: 'New note' }).waitFor()
 }
@@ -71,6 +77,8 @@ async function open(tab: Page, title: string) {
 }
 try {
   await signIn(page)
+  assert.equal(await page.getByRole('button', { name: 'All notes', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Archive', exact: true }).count(), 0)
   await page.waitForFunction(
     async () => (await navigator.serviceWorker.getRegistration())?.active?.state === 'activated',
   )
@@ -84,7 +92,22 @@ try {
   await body.fill('First entry')
   await body.press('End')
   await body.press('Enter')
+  await page.getByRole('button', { name: 'Open formatting' }).click()
   await page.getByRole('button', { name: 'Checklist' }).click()
+  await page.getByRole('button', { name: 'More formatting' }).click()
+  const overflow = page.getByRole('group', { name: 'More formatting tools' })
+  await overflow.getByRole('button', { name: 'Link' }).waitFor()
+  await page.waitForFunction(() => {
+    const rail = document.getElementById('note-format-tools')?.getBoundingClientRect()
+    const column = document.getElementById('note-format-overflow')?.getBoundingClientRect()
+    return rail && column && column.bottom < rail.top
+  })
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  assert.equal(
+    await page.getByRole('button', { name: 'Open formatting' }).getAttribute('aria-expanded'),
+    'false',
+  )
   await body.pressSequentially('Pack charger')
   await page.getByRole('checkbox').check()
   await status(page, 'Saved to server')
@@ -232,6 +255,50 @@ try {
     'Travel log local',
     'Travel log remote',
   ])
+  await restarted.getByRole('button', { name: 'New folder' }).click()
+  await restarted.getByRole('textbox', { name: 'Folder name' }).fill('Trips')
+  await restarted.getByRole('button', { name: 'Create', exact: true }).click()
+  const grid = restarted.getByRole('region', { name: 'Folders' })
+  const trips = grid.getByRole('button', { name: 'Trips', exact: true })
+  await trips.waitFor()
+  assert.equal(await restarted.getByRole('button', { name: 'Back to home' }).count(), 0)
+  await trips.click()
+  await restarted.getByRole('heading', { name: 'Trips', exact: true }).waitFor()
+  await grid.waitFor({ state: 'hidden' })
+  await restarted.getByRole('button', { name: 'Back to home' }).click()
+  await trips.waitFor()
+  assert.equal(await trips.evaluate((tile) => tile === document.activeElement), true)
+  await trips.click()
+  for (const name of ['Tickets', 'Map']) {
+    await restarted.getByRole('button', { name: 'New note' }).click()
+    await restarted.waitForFunction(
+      () => document.querySelector<HTMLInputElement>('.note-title')?.value === '',
+    )
+    await restarted.getByRole('textbox', { name: 'Note title' }).fill(name)
+    await status(restarted, 'Saved to server')
+    await restarted.getByRole('button', { name, exact: true }).waitFor()
+  }
+  const move = restarted.getByRole('combobox', { name: 'Move note to folder' })
+  assert.equal(await move.locator('option:checked').textContent(), 'Trips')
+  await move.selectOption('')
+  await status(restarted, 'Saved to server')
+  await restarted.getByRole('button', { name: 'Map', exact: true }).waitFor({ state: 'hidden' })
+  await restarted.getByRole('button', { name: 'Rename folder' }).click()
+  await restarted.getByRole('textbox', { name: 'Folder name' }).fill('Travel')
+  await restarted.getByRole('button', { name: 'Save', exact: true }).click()
+  await restarted.getByRole('heading', { name: 'Travel', exact: true }).waitFor()
+  restarted.once('dialog', (dialog) => void dialog.accept())
+  await restarted.getByRole('button', { name: 'Delete folder' }).click()
+  await restarted.getByRole('heading', { name: 'Travel', exact: true }).waitFor({ state: 'hidden' })
+  await restarted.getByText('Account', { exact: true }).click()
+  await restarted.getByRole('button', { name: 'Archive', exact: true }).click()
+  await restarted.getByRole('heading', { name: 'Archive', exact: true }).waitFor()
+  await restarted.getByRole('button', { name: 'Back to home' }).click()
+  await restarted.getByText('Account', { exact: true }).click()
+  await restarted.getByRole('button', { name: 'Trash', exact: true }).click()
+  await restarted.getByRole('button', { name: 'Tickets', exact: true }).waitFor()
+  assert.equal(await restarted.getByRole('button', { name: 'Map', exact: true }).count(), 0)
+  console.log('Folders support create, rename, note moves, and immediate Trash on delete')
   assert.deepEqual(errors, [])
   console.log(
     'Chromium passed offline restart, three durable drafts, mobile checklists, tab ownership, conflict copy, and export.',

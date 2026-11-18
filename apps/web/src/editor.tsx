@@ -18,7 +18,8 @@ import { Editor, type JSONContent } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
-import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { For, createEffect, createMemo, createSignal, Show, onCleanup, onMount } from 'solid-js'
+import FormattingDock from './formatting-dock'
 import type { NoteFields } from '../../../packages/contracts'
 
 export default function RichEditor(props: {
@@ -35,6 +36,8 @@ export default function RichEditor(props: {
     ['Bold', Bold, 'bold', (e: Editor) => e.chain().focus().toggleBold().run()],
     ['Italic', Italic, 'italic', (e: Editor) => e.chain().focus().toggleItalic().run()],
     ['Underline', Underline, 'underline', (e: Editor) => e.chain().focus().toggleUnderline().run()],
+    ['Bullets', List, 'bulletList', (e: Editor) => e.chain().focus().toggleBulletList().run()],
+    ['Checklist', ListChecks, 'taskList', (e: Editor) => e.chain().focus().toggleTaskList().run()],
     [
       'Strikethrough',
       Strikethrough,
@@ -62,14 +65,12 @@ export default function RichEditor(props: {
       (e: Editor) => e.chain().focus().toggleHeading({ level: 3 }).run(),
       { level: 3 },
     ],
-    ['Bullets', List, 'bulletList', (e: Editor) => e.chain().focus().toggleBulletList().run()],
     [
       'Numbered list',
       ListOrdered,
       'orderedList',
       (e: Editor) => e.chain().focus().toggleOrderedList().run(),
     ],
-    ['Checklist', ListChecks, 'taskList', (e: Editor) => e.chain().focus().toggleTaskList().run()],
     [
       'Highlight',
       Highlighter,
@@ -78,6 +79,7 @@ export default function RichEditor(props: {
     ],
     ['Undo', Undo2, '', (e: Editor) => e.chain().focus().undo().run()],
     ['Redo', Redo2, '', (e: Editor) => e.chain().focus().redo().run()],
+    ['Link', Link2, 'link', editLink],
   ] as const
 
   onMount(() => {
@@ -130,41 +132,30 @@ export default function RichEditor(props: {
     } else window.alert('Enter an http, https, or mailto URL.')
   }
 
+  const renderTools = (start: () => number, end: () => number) => (
+    <For each={tools.slice(start(), end())}>
+      {([label, Icon, mark, action, attributes]) => {
+        const active = createMemo(() => {
+          epoch()
+          return mark ? (editor?.isActive(mark, attributes) ?? false) : undefined
+        })
+        return (
+          <button
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-pressed={active()}
+            onClick={() => editor && action(editor)}
+          >
+            <Icon size={18} />
+          </button>
+        )
+      }}
+    </For>
+  )
+
   return (
     <>
-      <div class="toolbar" role="group" aria-label="Formatting">
-        <For each={tools}>
-          {([label, Icon, mark, action, attributes]) => {
-            const active = createMemo(() => {
-              epoch()
-              return mark ? (editor?.isActive(mark, attributes) ?? false) : undefined
-            })
-            return (
-              <button
-                type="button"
-                title={label}
-                aria-label={label}
-                disabled={!props.editable()}
-                aria-pressed={active()}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => editor && action(editor)}
-              >
-                <Icon size={17} />
-              </button>
-            )
-          }}
-        </For>
-        <button
-          type="button"
-          aria-label="Link"
-          title="Link"
-          disabled={!props.editable()}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={editLink}
-        >
-          <Link2 size={17} />
-        </button>
-      </div>
       <div
         ref={(node) => {
           element = node
@@ -173,6 +164,9 @@ export default function RichEditor(props: {
         onCompositionStart={() => props.composition(true)}
         onCompositionEnd={() => props.composition(false)}
       />
+      <Show when={props.editable()}>
+        <FormattingDock toolCount={tools.length} tools={renderTools} />
+      </Show>
     </>
   )
 }

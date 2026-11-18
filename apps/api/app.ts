@@ -4,10 +4,10 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { secureHeaders } from 'hono/secure-headers'
 import { z } from 'zod'
-import { mutation, plainText } from '../../packages/contracts'
-import { auth, origin } from './auth'
+import { mutation, plainText, folderName } from '../../packages/contracts'
+import { auth, trustedOrigins } from './auth'
 import { db } from './db'
-import { notes, receipts } from './schema'
+import { notes, receipts, folders } from './schema'
 
 export const app = new Hono<{ Variables: { owner: string } }>()
 app.use(
@@ -26,7 +26,10 @@ app.use(
 )
 app.use('/api/*', async (c, next) => {
   c.header('Cache-Control', 'private, no-store')
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.req.header('Origin') !== origin) {
+  if (
+    !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
+    !trustedOrigins.includes(c.req.header('Origin') ?? '')
+  ) {
     return c.json({ error: 'Unexpected origin' }, 403)
   }
   await next()
@@ -42,9 +45,85 @@ app.use('/api/*', async (c, next) => {
 })
 app.get('/api/me', (c) => c.json({ id: c.get('owner') }))
 
+const folderFields = { id: folders.id, name: folders.name }
+const folderInput = z.object({ name: folderName })
+const byFolder = (owner: string, id: string) => and(eq(folders.owner, owner), eq(folders.id, id))
+
+app.get('/api/folders', async (c) => {
+  return c.json(
+    await db
+      .select(folderFields)
+      .from(folders)
+      .where(eq(folders.owner, c.get('owner')))
+      .orderBy(asc(folders.name)),
+  )
+})
+
+app.post('/api/folders', bodyLimit({ maxSize: 2048 }), async (c) => {
+  const input = folderInput.safeParse(await c.req.json().catch(() => null))
+  if (!input.success) return c.json({ error: 'Enter a folder name up to 60 characters.' }, 422)
+  const owner = c.get('owner')
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}::text, 0))`)
+    const [folder] = await tx
+      .insert(folders)
+      .values({ id: crypto.randomUUID(), owner, name: input.data.name })
+      .onConflictDoNothing()
+      .returning(folderFields)
+    if (!folder) return c.json({ error: 'A folder with that name already exists.' }, 409)
+    return c.json(folder, 201)
+  })
+})
+
+app.on(['PATCH', 'DELETE'], '/api/folders/:id', bodyLimit({ maxSize: 2048 }), async (c) => {
+  const id = z.uuid().safeParse(c.req.param('id'))
+  if (!id.success) return c.json({ error: 'Folder unavailable.' }, 404)
+  const owner = c.get('owner')
+  const filter = byFolder(owner, id.data)
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}::text, 0))`)
+    const [existing] = await tx.select(folderFields).from(folders).where(filter)
+    if (!existing) return c.json({ error: 'Folder unavailable.' }, 404)
+    if (c.req.method === 'DELETE') {
+      const now = new Date()
+      await tx
+        .update(notes)
+        .set({
+          folderId: null,
+          deletedAt: sql`coalesce(${notes.deletedAt}, ${now.toISOString()}::timestamptz)`,
+          updatedAt: now,
+          revision: sql`${notes.revision} + 1`,
+        })
+        .where(and(eq(notes.owner, owner), eq(notes.folderId, id.data)))
+      await tx.delete(folders).where(filter)
+      return c.body(null, 204)
+    }
+    const input = folderInput.safeParse(await c.req.json().catch(() => null))
+    if (!input.success) return c.json({ error: 'Enter a folder name up to 60 characters.' }, 422)
+    const [duplicate] = await tx
+      .select(folderFields)
+      .from(folders)
+      .where(
+        and(
+          eq(folders.owner, owner),
+          sql`lower(${folders.name}) = lower(${input.data.name})`,
+          sql`${folders.id} <> ${id.data}::uuid`,
+        ),
+      )
+    if (duplicate) return c.json({ error: 'A folder with that name already exists.' }, 409)
+    const [folder] = await tx
+      .update(folders)
+      .set({ name: input.data.name })
+      .where(filter)
+      .returning(folderFields)
+    return c.json(folder)
+  })
+})
+
 const summaries = {
   id: notes.id,
   title: notes.title,
+  folderId: notes.folderId,
   pinned: notes.pinned,
   archived: notes.archived,
   deletedAt: notes.deletedAt,
@@ -58,6 +137,7 @@ function noteResponse<
   return { ...rest, deleted: !!deletedAt, updatedAt: updatedAt.toISOString() }
 }
 const listQuery = z.object({
+  folder: z.uuid().optional(),
   view: z.enum(['active', 'archived', 'trash']).default('active'),
   sort: z.enum(['updated', 'title']).default('updated'),
   q: z.string().trim().max(150).default(''),
@@ -79,7 +159,7 @@ function decodeCursor(value: string) {
 app.get('/api/notes', async (c) => {
   const filters = listQuery.safeParse(c.req.query())
   if (!filters.success) return c.json({ error: 'Invalid search parameters' }, 400)
-  const { view, sort, q, cursor } = filters.data
+  const { view, sort, q, cursor, folder } = filters.data
   const after = cursor ? decodeCursor(cursor) : null
   if (cursor && !after) return c.json({ error: 'Invalid cursor' }, 400)
 
@@ -100,6 +180,7 @@ app.get('/api/notes', async (c) => {
     .where(
       and(
         eq(notes.owner, c.get('owner')),
+        folder ? eq(notes.folderId, folder) : undefined,
         view === 'trash'
           ? isNotNull(notes.deletedAt)
           : and(isNull(notes.deletedAt), eq(notes.archived, view === 'archived')),
@@ -157,10 +238,15 @@ app.put('/api/notes/:id', bodyLimit({ maxSize: 512 * 1024 }), async (c) => {
     if ((current?.revision ?? null) !== expectedRevision) {
       return c.json({ current: current ? noteResponse(current) : null }, 409)
     }
-    const { deleted, ...editable } = fields
+    const { deleted, folderId, ...editable } = fields
+    if (folderId) {
+      const [folder] = await tx.select(folderFields).from(folders).where(byFolder(owner, folderId))
+      if (!folder) return c.json({ error: 'Folder unavailable. Choose a different folder.' }, 422)
+    }
     const updatedAt = new Date()
     const values = {
       ...editable,
+      folderId: folderId === undefined ? (current?.folderId ?? null) : folderId,
       searchText: plainText(fields.document),
       deletedAt: deleted ? (current?.deletedAt ?? updatedAt) : null,
       revision: (expectedRevision ?? 0) + 1,
@@ -185,6 +271,10 @@ app.get('/api/export', async (c) => {
     version: 1,
     exportedAt: new Date().toISOString(),
     notes: rows.map(noteResponse),
+    folders: await db
+      .select(folderFields)
+      .from(folders)
+      .where(eq(folders.owner, c.get('owner'))),
   })
 })
 app.all('/api/*', (c) => c.json({ error: 'Route unavailable' }, 404))

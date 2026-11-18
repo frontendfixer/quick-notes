@@ -155,3 +155,91 @@ integration('database rollback discards changes after an operation fails', async
   ).rejects.toThrow('Abort transaction')
   expect(await db.select().from(user).where(eq(user.id, id))).toHaveLength(0)
 })
+
+integration(
+  'private folders group notes and deleting a folder moves all its notes to Trash',
+  async () => {
+    const { createAuth } = await import('../apps/api/auth')
+    const email = crypto.randomUUID() + '@example.test'
+    await createAuth(true).api.signUpEmail({ body: { email, name: email, password } })
+    const outsider = (await request('/auth/sign-in/email', '', { email, password })).headers
+      .getSetCookie()[0]
+      .split(';')[0]
+    const created = await request('/folders', second, { name: '  Trips  ' })
+    expect(created.status).toBe(201)
+    const folder = await created.json()
+    expect(folder.name).toBe('Trips')
+    expect((await request('/folders', second, { name: 'TRIPS' })).status).toBe(409)
+    expect(await (await request('/folders', outsider)).json()).toEqual([])
+    expect((await request('/folders/' + folder.id, outsider, undefined, 'DELETE')).status).toBe(404)
+    expect(
+      (await request('/folders/' + folder.id, second, { name: 'Travel' }, 'PATCH')).status,
+    ).toBe(200)
+    const mutation = (
+      fields: ReturnType<typeof emptyNote>,
+      expectedRevision: number | null = null,
+    ) => ({
+      mutationId: crypto.randomUUID(),
+      expectedRevision,
+      fields,
+    })
+    const destination = '/notes/' + crypto.randomUUID()
+    expect(
+      (
+        await request(
+          destination,
+          outsider,
+          mutation({ ...emptyNote(), folderId: folder.id }),
+          'PUT',
+        )
+      ).status,
+    ).toBe(422)
+    const archived = '/notes/' + crypto.randomUUID()
+    expect(
+      (
+        await request(
+          destination,
+          second,
+          mutation({ ...emptyNote(), title: 'Map', folderId: folder.id }),
+          'PUT',
+        )
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await request(
+          archived,
+          second,
+          mutation({ ...emptyNote(), title: 'Tickets', folderId: folder.id, archived: true }),
+          'PUT',
+        )
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await request(
+          destination,
+          second,
+          mutation({ ...emptyNote(), title: 'Updated map' }, 1),
+          'PUT',
+        )
+      ).status,
+    ).toBe(200)
+    expect((await (await request('/notes?folder=' + folder.id, second)).json()).notes).toHaveLength(
+      1,
+    )
+    const backup = await (await request('/export', second)).json()
+    expect(backup.folders).toContainEqual({ id: folder.id, name: 'Travel' })
+    expect(
+      backup.notes.filter((note: { folderId?: string }) => note.folderId === folder.id),
+    ).toHaveLength(2)
+    expect((await request('/folders/' + folder.id, second, undefined, 'DELETE')).status).toBe(204)
+    expect(await (await request('/folders', second)).json()).toEqual([])
+    for (const path of [destination, archived]) {
+      const note = await (await request(path, second)).json()
+      expect(note.deleted).toBe(true)
+      expect(note.folderId).toBeNull()
+      expect(note.revision).toBeGreaterThan(1)
+    }
+  },
+)

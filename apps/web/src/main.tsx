@@ -1,3 +1,4 @@
+import { animate } from 'motion/mini'
 import {
   Archive,
   ArchiveRestore,
@@ -9,9 +10,14 @@ import {
   CircleAlert,
   Cloud,
   Download,
+  Eye,
+  EyeOff,
   FileDown,
   FileText,
-  HardDrive,
+  Folder as FolderIcon,
+  FolderInput,
+  FolderPlus,
+  Pencil,
   LockKeyhole,
   LogOut,
   NotebookPen,
@@ -25,11 +31,13 @@ import {
   WifiOff,
 } from 'lucide-solid'
 import {
+  batch,
   createEffect,
   createMemo,
   createSignal,
   For,
   lazy,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -44,6 +52,7 @@ import {
   type NoteFields,
   type Summary,
   type View,
+  type Folder,
 } from '../../../packages/contracts'
 import { local, type Draft } from './storage'
 import './style.scss'
@@ -66,18 +75,13 @@ type PendingEdit = {
   generation: string
 }
 const label = (title: string) => title.trim() || 'Untitled'
-const views = [
-  ['active', 'All notes', NotebookPen],
+const accountViews = [
   ['archived', 'Archive', Archive],
   ['trash', 'Trash', Trash2],
-  ['offline', 'On this device', HardDrive],
 ] as const
 
 function belongsTo(note: Pick<Summary, 'deleted' | 'archived'>, view: View) {
-  return (
-    view === 'offline' ||
-    (view === 'trash' ? note.deleted : !note.deleted && note.archived === (view === 'archived'))
-  )
+  return view === 'trash' ? note.deleted : !note.deleted && note.archived === (view === 'archived')
 }
 
 function download(name: string, data: unknown) {
@@ -89,6 +93,33 @@ function download(name: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+function PasswordField(props: { placeholder?: string }) {
+  const [visible, setVisible] = createSignal(false)
+  return (
+    <div class="password-field">
+      <input
+        name="password"
+        aria-label="Password"
+        type={visible() ? 'text' : 'password'}
+        placeholder={props.placeholder}
+        autocomplete="current-password"
+        required
+      />
+      <button
+        type="button"
+        class="icon-button"
+        aria-label={visible() ? 'Hide password' : 'Show password'}
+        title={visible() ? 'Hide password' : 'Show password'}
+        onClick={() => setVisible((value) => !value)}
+      >
+        <Show when={visible()} fallback={<Eye size={17} />}>
+          <EyeOff size={17} />
+        </Show>
+      </button>
+    </div>
+  )
+}
+
 function App() {
   const [owner, setOwner] = createSignal<string>()
   const [ready, setReady] = createSignal(false)
@@ -96,6 +127,12 @@ function App() {
   const [mustSignIn, setMustSignIn] = createSignal(false)
   const [writable, setWritable] = createSignal(false)
   const [unavailable, setUnavailable] = createSignal(false)
+  const [folders, setFolders] = createSignal<Folder[]>([])
+  const [folder, setFolder] = createSignal<string>()
+  const [folderForm, setFolderForm] = createSignal<'create' | 'rename'>()
+  const [folderBusy, setFolderBusy] = createSignal(false)
+  const [folderError, setFolderError] = createSignal('')
+  const chosenFolder = () => folders().find(({ id }) => id === folder())
   const [view, setView] = createSignal<View>('active')
   const [sort, setSort] = createSignal('updated')
   const [query, setQuery] = createSignal('')
@@ -121,6 +158,7 @@ function App() {
   let selection = 0
   let editEpoch = 0
   let listEpoch = 0
+  let folderEpoch = 0
   let draftEpoch = 0
   let syncBusy = false
   let refreshBusy = false
@@ -142,7 +180,8 @@ function App() {
   const draftById = createMemo(() => new Map(drafts().map((draft) => [draft.id, draft])))
   const draftFor = (id: string) => draftById().get(id)
   const activeDraft = () => draftFor(open()?.id ?? '')
-  const canEdit = () => writable() && !fields().deleted && !signingOut() && !creating()
+  const canEdit = () =>
+    writable() && !fields().deleted && !signingOut() && !creating() && !folderBusy()
 
   function acquireWriter(id: string) {
     if (lockOwner === id) return
@@ -173,12 +212,110 @@ function App() {
     if (owner() === id && draftEpoch === check) setDrafts(items)
   }
 
+  const inView = (note: Pick<NoteFields, 'folderId' | 'deleted' | 'archived'>) =>
+    belongsTo(note, view()) && (!folder() || note.folderId === folder())
+
+  function changeView(tab: View, id?: string) {
+    if (tab === view() && id === folder()) return
+    clearTimeout(listTimer)
+    batch(() => {
+      setFolderForm(undefined)
+      setFolderError('')
+      setFolder(id)
+      setView(tab)
+      setQuery('')
+      setNotes([])
+      setNext(null)
+      setShowEditor(false)
+    })
+    void safeList()
+  }
+
+  async function loadFolders(id: string, cached = false) {
+    const request = ++folderEpoch
+    const items: Folder[] = cached
+      ? await local.folders(id)
+      : await fetch('/api/folders').then(async (response) => {
+          if (!response.ok) throw new Error('Could not load folders')
+          return response.json()
+        })
+    if (owner() !== id || request !== folderEpoch) return
+    setFolders(items)
+    if (folder() && !items.some((item) => item.id === folder())) changeView('active')
+    if (!cached) await local.cacheFolders(id, items).catch(() => undefined)
+  }
+
+  async function saveFolder(event?: SubmitEvent) {
+    event?.preventDefault()
+    const account = owner()
+    if (!account || !canManageFolders()) return
+    const existing = event && folderForm() === 'create' ? undefined : chosenFolder()
+    if (
+      !event &&
+      (!existing || !window.confirm('Delete this folder and move all its notes to Trash?'))
+    )
+      return
+    const input = event ? new FormData(event.currentTarget as HTMLFormElement).get('name') : null
+    setFolderBusy(true)
+    setFolderError('')
+    ++folderEpoch
+    try {
+      if (!event && existing) {
+        if (!(await flushEdits())) return
+        if (drafts().some((draft) => draft.fields.folderId === existing.id)) {
+          throw new Error('Wait for the notes in this folder to finish syncing before deleting it.')
+        }
+      }
+      const response = await fetch('/api/folders' + (existing ? '/' + existing.id : ''), {
+        method: event ? (existing ? 'PATCH' : 'POST') : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: event ? JSON.stringify({ name: input }) : undefined,
+      })
+      if (response.status === 401) expire()
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null)
+        throw new Error(problem?.error ?? 'Could not update the folder.')
+      }
+      if (owner() !== account) return
+      const saved: Folder | undefined = event ? await response.json() : undefined
+      const items = folders().filter((item) => item.id !== existing?.id && item.id !== saved?.id)
+      if (saved) items.push(saved)
+      items.sort((a, b) => a.name.localeCompare(b.name))
+      setFolders(items)
+      ++folderEpoch
+      void local.cacheFolders(account, items).catch(() => undefined)
+      if (!event && existing) {
+        await local.dropFolderSnapshots(account, existing.id).catch(() => undefined)
+        const current = open()
+        if (
+          current &&
+          fields().folderId === existing.id &&
+          !draftFor(current.id) &&
+          !pending.has(current.id)
+        ) {
+          ++selection
+          setOpen(undefined)
+          setShowEditor(false)
+        }
+        changeView('active')
+      }
+      setFolderForm(undefined)
+    } catch (error) {
+      setFolderError(error instanceof Error ? error.message : 'Could not update the folder.')
+    } finally {
+      setFolderBusy(false)
+    }
+  }
+
+  const canManageFolders = () =>
+    authorized() && writable() && !unavailable() && !folderBusy() && !signingOut()
+
   async function list(append = false) {
     const id = owner()
     if (!id) return
     const request = ++listEpoch
     const tab = view()
-    if (tab === 'offline' || unavailable() || mustSignIn()) {
+    if (unavailable() || mustSignIn()) {
       const snapshots = await local.snapshots(id)
       const entries = new Map(snapshots.map((note) => [note.id, note]))
       for (const draft of drafts())
@@ -190,21 +327,14 @@ function App() {
         })
       if (request === listEpoch && owner() === id) {
         const offline = [...entries.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        setNotes(
-          tab === 'offline'
-            ? offline
-            : offline.filter((note) =>
-                tab === 'trash'
-                  ? note.deleted
-                  : !note.deleted && note.archived === (tab === 'archived'),
-              ),
-        )
+        setNotes(offline.filter(inView))
         setNext(null)
       }
       return
     }
     if (!authorized()) return
     const params = new URLSearchParams({ view: tab, sort: sort(), q: query() })
+    if (folder()) params.set('folder', folder()!)
     if (append && next()) params.set('cursor', next()!)
     const response = await fetch('/api/notes?' + params)
     if (request !== listEpoch || owner() !== id) return
@@ -429,6 +559,7 @@ function App() {
           continue
         }
         if ([400, 413, 422].includes(response.status)) {
+          const problem: { error?: string } | null = await response.json().catch(() => null)
           await ordered(() =>
             local.change(
               id,
@@ -439,7 +570,8 @@ function App() {
                   sent: undefined,
                   error:
                     current.generation === sent.generation
-                      ? 'Server rejected this draft. Edit it or download a copy.'
+                      ? (problem?.error ??
+                        'Server rejected this draft. Edit it or download a copy.')
                       : undefined,
                 },
             ),
@@ -471,7 +603,7 @@ function App() {
             }
             setNotes((previous) => {
               const exists = previous.some(({ id }) => id === updated.id)
-              if (!belongsTo(updated, view())) return previous.filter(({ id }) => id !== updated.id)
+              if (!inView(updated)) return previous.filter(({ id }) => id !== updated.id)
               if (exists) return previous.map((note) => (note.id === updated.id ? updated : note))
               return query().trim() ? previous : [updated, ...previous]
             })
@@ -536,6 +668,8 @@ function App() {
           setOpen(undefined)
           setNotes([])
           setDrafts([])
+          setFolders([])
+          setFolder(undefined)
         }
         setOwner(account.id)
         await local.setOwner(account.id).catch(storageError)
@@ -546,6 +680,7 @@ function App() {
       if (owner()) {
         acquireWriter(owner()!)
         await loadLocal().catch(storageError)
+        if (authorized()) void loadFolders(owner()!).catch(() => undefined)
         await safeList()
         if (authorized()) {
           void upload()
@@ -608,7 +743,11 @@ function App() {
         setNotice(
           response.status === 429
             ? 'Too many attempts. Try again shortly.'
-            : 'Sign-in failed. Check your email and password.',
+            : response.status === 403
+              ? 'This address is not allowed to sign in. Open Quick Notes from its original address.'
+              : response.status === 401
+                ? 'Sign-in failed. Check your email and password.'
+                : 'Sign-in is unavailable right now. Try again shortly.',
         )
       else void navigator.storage?.persist?.().catch(() => false)
     } catch {
@@ -633,6 +772,10 @@ function App() {
     setNotes([])
     setNext(null)
     setView('active')
+    setFolder(undefined)
+    setFolders([])
+    setFolderForm(undefined)
+    setFolderError('')
     setQuery('')
     setShowEditor(false)
   }
@@ -755,6 +898,7 @@ function App() {
         setUnavailable(true)
         acquireWriter(owner()!)
         await loadLocal().catch(storageError)
+        await loadFolders(owner()!, true).catch(() => undefined)
         void safeList()
       }
       await refresh()
@@ -798,12 +942,12 @@ function App() {
   })
 
   const visibleNotes = createMemo(() => {
-    const cachedView = view() === 'offline' || unavailable() || mustSignIn()
+    const cachedView = unavailable() || mustSignIn()
     if (!cachedView && query().trim()) return notes()
     const ordered = new Map(notes().map((note) => [note.id, note]))
     const added: Summary[] = []
     for (const draft of drafts()) {
-      if (!belongsTo(draft.fields, view())) {
+      if (!inView(draft.fields)) {
         ordered.delete(draft.id)
         continue
       }
@@ -837,14 +981,7 @@ function App() {
         autocomplete="username"
         required
       />
-      <input
-        name="password"
-        type="password"
-        aria-label="Password"
-        placeholder="Password"
-        autocomplete="current-password"
-        required
-      />
+      <PasswordField placeholder="Password" />
       <button class="primary" disabled={signingIn()}>
         Sign in
       </button>
@@ -872,20 +1009,51 @@ function App() {
   const saveLabel = () => {
     const state = saveText()
     if (state === 'Editing' || state === 'Saved on device') {
-      return unavailable() || mustSignIn() ? 'On this device' : 'Saving…'
+      return unavailable() || mustSignIn() ? 'Offline' : 'Saving…'
     }
     return state === 'Saved to server' ? 'Up to date' : state
   }
   const saveProblem = () => ['Conflict', 'Save rejected', 'Save failed'].includes(saveText())
-  const newNote = () => void create()
-  const canCreate = () => writable() && !creating() && !signingOut()
-  const activeView = () => views.find(([key]) => key === view())!
+  const newNote = () => void create({ ...emptyNote(), folderId: folder() ?? null })
+  const canCreate = () => writable() && !creating() && !signingOut() && !folderBusy()
+  const home = () => view() === 'active' && !folder()
+  const collection = () => folder() ?? view()
+  const activeView = () =>
+    chosenFolder()?.name ??
+    (view() === 'archived' ? 'Archive' : view() === 'trash' ? 'Trash' : 'Notes')
+  let collectionPanel: HTMLDivElement | undefined
+  createEffect(
+    on(
+      collection,
+      (current, previous) => {
+        const panel = collectionPanel
+        if (!panel) return
+        panel.scrollTop = 0
+        const isHome = current === 'active'
+        const target =
+          isHome && previous
+            ? panel.querySelector<HTMLElement>('[data-folder-id="' + CSS.escape(previous) + '"]')
+            : panel.querySelector<HTMLElement>('[data-collection-back]')
+        target?.focus({ preventScroll: true })
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        const transition = animate(
+          panel,
+          {
+            opacity: [0.68, 1],
+            transform: [isHome ? 'translateX(-8px)' : 'translateX(8px)', 'translateX(0)'],
+          },
+          { duration: 0.16, ease: [0.22, 1, 0.36, 1] },
+        )
+        onCleanup(() => transition.stop())
+      },
+      { defer: true },
+    ),
+  )
   const dateFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
   const emptyHeadings: Record<View, string> = {
     active: 'No notes yet',
     archived: 'Archive is empty',
     trash: 'Trash is empty',
-    offline: 'No notes on this device',
   }
 
   return (
@@ -916,15 +1084,8 @@ function App() {
                     Email
                     <input name="email" type="email" autocomplete="username" required />
                   </label>
-                  <label>
-                    Password
-                    <input
-                      name="password"
-                      type="password"
-                      autocomplete="current-password"
-                      required
-                    />
-                  </label>
+                  <span class="password-label">Password</span>
+                  <PasswordField />
                   <button class="primary login-submit" disabled={signingIn() || unavailable()}>
                     {signingIn() ? 'Signing in…' : 'Sign in'}
                     <ArrowRight size={17} />
@@ -962,7 +1123,7 @@ function App() {
             </button>
           </header>
           <Show when={mustSignIn() && !showEditor()}>{reauthForm()}</Show>
-          <Show when={authorized() && !unavailable() && view() !== 'offline'}>
+          <Show when={authorized() && !unavailable()}>
             <div class="search">
               <Search size={17} />
               <input
@@ -985,126 +1146,233 @@ function App() {
             </div>
           </Show>
           {updateNotice(true)}
-          <nav aria-label="Note views">
-            <For each={views}>
-              {([key, name, Icon]) => (
+          <div
+            class="collection-panel"
+            ref={(node) => {
+              collectionPanel = node
+            }}
+          >
+            <Show when={!home()}>
+              <header class="collection-heading">
                 <button
-                  aria-pressed={view() === key}
-                  onClick={() => {
-                    if (view() === key) return
-                    setView(key)
-                    setNotes([])
-                    void safeList()
-                  }}
+                  class="icon-button collection-back"
+                  aria-label="Back to home"
+                  title="Back to home"
+                  data-collection-back
+                  onClick={() => changeView('active')}
                 >
-                  <Icon size={17} />
-                  <span>{name}</span>
+                  <ArrowLeft size={19} />
                 </button>
-              )}
-            </For>
-          </nav>
-
-          <div class="list-heading">
-            <h2>{activeView()[1]}</h2>
-            <Show when={authorized() && !unavailable() && view() !== 'offline'}>
-              <label class="sort-control">
-                <ArrowDownWideNarrow size={15} />
-                <select
-                  aria-label="Sort notes"
-                  value={sort()}
-                  onChange={(event) => {
-                    setSort(event.currentTarget.value)
-                    void safeList()
-                  }}
-                >
-                  <option value="updated">Recent</option>
-                  <option value="title">Title</option>
-                </select>
-              </label>
-            </Show>
-          </div>
-          <div class="notes">
-            <Show when={!showEditor() && notice()}>
-              <p class="inline-error" role="alert">
-                {notice()}
-              </p>
-            </Show>
-            <Show when={opening() && !showEditor()}>
-              <p class="muted" role="status">
-                Opening note…
-              </p>
-            </Show>
-            <Show when={unavailable()}>
-              <p class="offline-notice">
-                <WifiOff size={15} />
-                Offline · showing notes on this device
-              </p>
-            </Show>
-            <For
-              each={visibleIds()}
-              fallback={
-                <div class="list-empty">
-                  <FileText size={21} />
-                  <p>
-                    {ready()
-                      ? query().trim() && !unavailable() && view() !== 'offline'
-                        ? 'No matching notes'
-                        : emptyHeadings[view()]
-                      : 'Loading notes…'}
-                  </p>
-                </div>
-              }
-            >
-              {(id) => {
-                const note = () => visibleById().get(id)
-                const draft = createMemo(() => draftById().get(id))
-                const rowDate = createMemo(() => {
-                  const value = note()?.updatedAt
-                  return value ? dateFormat.format(new Date(value)) : ''
-                })
-                return (
+                <h2>{activeView()}</h2>
+                <Show when={chosenFolder() && canManageFolders()}>
                   <button
-                    class="note-row"
-                    aria-current={open()?.id === id ? 'true' : undefined}
-                    aria-label={label(open()?.id === id ? title() : (note()?.title ?? ''))}
-                    onClick={() => void select(id)}
+                    class="icon-button"
+                    title="Rename folder"
+                    aria-label="Rename folder"
+                    onClick={() => {
+                      setFolderError('')
+                      setFolderForm(folderForm() === 'rename' ? undefined : 'rename')
+                    }}
                   >
-                    <span class="row-icon">
-                      <FileText size={16} />
-                    </span>
-                    <span class="row-copy">
-                      <strong>{label(open()?.id === id ? title() : (note()?.title ?? ''))}</strong>
-                      <small>{rowDate()}</small>
-                    </span>
-                    <span class="row-state">
-                      <Show when={draft()?.conflict}>
-                        <CircleAlert size={14} aria-label="Conflict" />
-                      </Show>
-                      <Show when={note()?.pinned}>
-                        <Pin size={14} aria-label="Pinned" />
-                      </Show>
-                    </span>
+                    <Pencil size={16} />
                   </button>
-                )
-              }}
-            </For>
-            <Show when={next()}>
-              <button class="load-more" onClick={() => void safeList(true)}>
-                Load more
-                <ChevronDown size={15} />
-              </button>
+                  <button
+                    class="icon-button"
+                    title="Delete folder"
+                    aria-label="Delete folder"
+                    onClick={() => void saveFolder()}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </Show>
+              </header>
             </Show>
+            <Show when={home()}>
+              <div class="folder-heading">
+                <h2>Folders</h2>
+                <Show when={canManageFolders()}>
+                  <button
+                    class="icon-button"
+                    title="New folder"
+                    aria-label="New folder"
+                    onClick={() => {
+                      setFolderError('')
+                      setFolderForm(folderForm() === 'create' ? undefined : 'create')
+                    }}
+                  >
+                    <FolderPlus size={17} />
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <Show when={folderForm()} keyed>
+              {(mode) => (
+                <form class="folder-form" onSubmit={saveFolder}>
+                  <input
+                    name="name"
+                    aria-label="Folder name"
+                    placeholder="Folder name"
+                    maxlength="60"
+                    required
+                    value={mode === 'rename' ? (chosenFolder()?.name ?? '') : ''}
+                    ref={(input) => queueMicrotask(() => input.isConnected && input.focus())}
+                  />
+                  <button class="secondary" disabled={!canManageFolders()}>
+                    {mode === 'create' ? 'Create' : 'Save'}
+                  </button>
+                </form>
+              )}
+            </Show>
+            <Show when={folderError()}>
+              <p class="inline-error" role="alert">
+                {folderError()}
+              </p>
+            </Show>
+
+            <Show when={home() && folders().length > 0}>
+              <section class="folder-grid" aria-label="Folders">
+                <For each={folders()}>
+                  {(item) => (
+                    <button
+                      class="folder-tile"
+                      aria-label={item.name}
+                      data-folder-id={item.id}
+                      onClick={() => changeView('active', item.id)}
+                    >
+                      <span class="folder-tile-icon">
+                        <FolderIcon size={19} />
+                      </span>
+                      <span class="folder-tile-name">{item.name}</span>
+                    </button>
+                  )}
+                </For>
+              </section>
+            </Show>
+
+            <div class="list-heading">
+              <h2>Notes</h2>
+              <Show when={authorized() && !unavailable()}>
+                <label class="sort-control">
+                  <ArrowDownWideNarrow size={15} />
+                  <select
+                    aria-label="Sort notes"
+                    value={sort()}
+                    onChange={(event) => {
+                      setSort(event.currentTarget.value)
+                      void safeList()
+                    }}
+                  >
+                    <option value="updated">Recent</option>
+                    <option value="title">Title</option>
+                  </select>
+                </label>
+              </Show>
+            </div>
+            <div class="notes">
+              <Show when={!showEditor() && notice()}>
+                <p class="inline-error" role="alert">
+                  {notice()}
+                </p>
+              </Show>
+              <Show when={opening() && !showEditor()}>
+                <p class="muted" role="status">
+                  Opening note…
+                </p>
+              </Show>
+              <Show when={unavailable()}>
+                <p class="offline-notice">
+                  <WifiOff size={15} />
+                  Offline · showing notes on this device
+                </p>
+              </Show>
+              <For
+                each={visibleIds()}
+                fallback={
+                  <div class="list-empty">
+                    <FileText size={21} />
+                    <p>
+                      {ready()
+                        ? query().trim() && !unavailable()
+                          ? 'No matching notes'
+                          : folder()
+                            ? 'No notes in this folder'
+                            : emptyHeadings[view()]
+                        : 'Loading notes…'}
+                    </p>
+                  </div>
+                }
+              >
+                {(id) => {
+                  const note = () => visibleById().get(id)
+                  const draft = createMemo(() => draftById().get(id))
+                  const rowDate = createMemo(() => {
+                    const value = note()?.updatedAt
+                    return value ? dateFormat.format(new Date(value)) : ''
+                  })
+                  return (
+                    <button
+                      class="note-row"
+                      aria-current={open()?.id === id ? 'true' : undefined}
+                      aria-label={label(open()?.id === id ? title() : (note()?.title ?? ''))}
+                      onClick={() => void select(id)}
+                    >
+                      <span class="row-icon">
+                        <FileText size={16} />
+                      </span>
+                      <span class="row-copy">
+                        <strong>
+                          {label(open()?.id === id ? title() : (note()?.title ?? ''))}
+                        </strong>
+                        <small>{rowDate()}</small>
+                      </span>
+                      <span class="row-state">
+                        <Show when={draft()?.conflict}>
+                          <CircleAlert size={14} aria-label="Conflict" />
+                        </Show>
+                        <Show when={note()?.pinned}>
+                          <Pin size={14} aria-label="Pinned" />
+                        </Show>
+                      </span>
+                    </button>
+                  )
+                }}
+              </For>
+              <Show when={next()}>
+                <button class="load-more" onClick={() => void safeList(true)}>
+                  Load more
+                  <ChevronDown size={15} />
+                </button>
+              </Show>
+            </div>
           </div>
           <footer class="account-actions">
             <details class="account-menu">
-              <summary aria-label="Workspace options">
+              <summary aria-label="Account options">
                 <span class="account-avatar">
                   <UserRound size={16} />
                 </span>
-                <span>Workspace</span>
+                <span>Account</span>
                 <ChevronsUpDown size={14} class="menu-chevron" />
               </summary>
               <div class="account-popover">
+                <For each={accountViews}>
+                  {([tab, title, Icon]) => (
+                    <button
+                      aria-current={view() === tab ? 'page' : undefined}
+                      onClick={(event) => {
+                        const menu = event.currentTarget.closest('details')
+                        menu?.removeAttribute('open')
+                        if (view() === tab) menu?.querySelector('summary')?.focus()
+                        else changeView(tab)
+                      }}
+                    >
+                      <Icon size={16} />
+                      {title}
+                    </button>
+                  )}
+                </For>
+                <div class="account-divider" />
+
                 <Show when={authorized()}>
                   <a href="/api/export">
                     <Download size={16} />
@@ -1175,10 +1443,43 @@ function App() {
                     </button>
                     <FileText size={16} class="desktop-note-icon" />
                     <span>
-                      {fields().deleted ? 'Trash' : fields().archived ? 'Archive' : 'Notes'}
+                      {fields().deleted
+                        ? 'Trash'
+                        : fields().archived
+                          ? 'Archive'
+                          : (folders().find((item) => item.id === fields().folderId)?.name ??
+                            'Notes')}
                     </span>
                   </div>
                   <div class="note-actions">
+                    <Show when={folders().length || fields().folderId}>
+                      <label class="folder-move">
+                        <FolderInput size={17} />
+                        <select
+                          aria-label="Move note to folder"
+                          value={fields().folderId ?? ''}
+                          onChange={(event) =>
+                            record({ folderId: event.currentTarget.value || null })
+                          }
+                          disabled={!writable() || signingOut() || creating() || folderBusy()}
+                        >
+                          <option value="">No folder</option>
+                          <Show
+                            when={
+                              fields().folderId &&
+                              !folders().some((item) => item.id === fields().folderId)
+                            }
+                          >
+                            <option value={fields().folderId ?? ''} disabled>
+                              Unavailable folder
+                            </option>
+                          </Show>
+                          <For each={folders()}>
+                            {(item) => <option value={item.id}>{item.name}</option>}
+                          </For>
+                        </select>
+                      </label>
+                    </Show>
                     <span
                       classList={{ 'save-chip': true, 'save-problem': saveProblem() }}
                       role="status"

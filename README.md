@@ -32,6 +32,8 @@ For password recovery, run `bun run account:reset-password you@example.com` and 
 
 **Saved on device** means the local transaction completed. **Saved to server** means the server acknowledged the current draft. Drafts still pending when the browser profile is cleared or evicted are recoverable only from a prior download. One tab per account and browser profile edits at a time. Close the writable tab to hand off editing. Another device can edit concurrently and receives a conflict when its base revision is stale.
 
+Create a private folder from **Folders** in the sidebar. Notes created while a folder is selected go into it automatically. Use **Move note to folder** to organize existing notes. Deleting a folder moves its notes to Trash immediately. Restored notes return without a folder. Folder membership is included in exports.
+
 When a conflict appears, review the server text, then save your draft as a new note or explicitly replace the reviewed version. **Download drafts** includes data still in memory and locally committed changes. **Export notes** downloads the server copy in versioned JSON. To restore a server export into a provisioned account, run `bun run backup:restore you@example.com backup.json`. This creates new note copies and retains formatting, archive, trash and pin states. Recovery JSON is readable and can also be used to recover a draft manually.
 
 ## Verify

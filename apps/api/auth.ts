@@ -9,6 +9,17 @@ export const origin = new URL(
       ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : 'http://localhost:3000'),
 ).origin
+const configuredOrigin = new URL(origin)
+const loopbackHosts = ['localhost', '127.0.0.1']
+export const trustedOrigins =
+  configuredOrigin.protocol === 'http:' && loopbackHosts.includes(configuredOrigin.hostname)
+    ? loopbackHosts.map((hostname) => {
+        const address = new URL(origin)
+        address.hostname = hostname
+        return address.origin
+      })
+    : [origin]
+
 const secret = process.env.BETTER_AUTH_SECRET
 if (!secret || secret.length < 32)
   throw new Error('Set BETTER_AUTH_SECRET to at least 32 random characters')
@@ -19,7 +30,7 @@ export function createAuth(provision = false) {
     secret,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
     emailAndPassword: { enabled: true, disableSignUp: !provision, minPasswordLength: 12 },
-    trustedOrigins: [origin],
+    trustedOrigins,
     advanced: {
       useSecureCookies: origin.startsWith('https:'),
       ipAddress: {

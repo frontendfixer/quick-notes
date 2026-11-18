@@ -66,7 +66,11 @@ function boundedDocument(input: unknown) {
   return true
 }
 
+export const folderName = z.string().trim().min(1).max(60)
+export type Folder = { id: string; name: string }
+
 export const noteFields = z.object({
+  folderId: z.uuid().nullable().optional(),
   title: z.string().max(200),
   document: z
     .unknown()
@@ -86,7 +90,7 @@ export type Mutation = z.infer<typeof mutation>
 export type Note = NoteFields & { id: string; revision: number; updatedAt: string }
 export type Summary = Omit<Note, 'document'>
 export type Ack = { mutationId: string; revision: number; updatedAt: string }
-export type View = 'active' | 'archived' | 'trash' | 'offline'
+export type View = 'active' | 'archived' | 'trash'
 export function plainText(node: DocumentNode): string {
   if (node.text) return node.text
   if (node.type === 'hardBreak') return ' '
