@@ -1,0 +1,5 @@
+.git
+.railway
+node_modules
+apps/web/dist
+.env*

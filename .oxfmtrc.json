@@ -1,0 +1,10 @@
+{
+  "semi": false,
+  "singleQuote": true,
+  "ignorePatterns": [
+    "apps/web/dist/",
+    "apps/api/migrations/",
+    "PROJECT_PLAN.md",
+    "notes_pwa_agent_brief.md"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1794996442956,
+      "tag": "0000_romantic_sentry",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794996470381,
+      "tag": "0001_deep_multiple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794997029555,
+      "tag": "0002_worthless_meteorite",
+      "breakpoints": true
+    }
+  ]
+}

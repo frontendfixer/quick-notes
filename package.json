@@ -1,0 +1,47 @@
+{
+  "name": "quick-notes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun --bun vite build",
+    "dev": "bun --bun vite",
+    "start": "bun apps/api/server.ts",
+    "check": "tsc --noEmit",
+    "db:migrate": "bun apps/api/migrate.ts",
+    "account:create": "bun apps/api/account.ts",
+    "test": "bun test",
+    "backup:restore": "bun apps/api/restore.ts",
+    "account:reset-password": "bun apps/api/reset-password.ts",
+    "lint": "oxlint . --deny-warnings",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
+  },
+  "dependencies": {
+    "@tiptap/core": "3.34.0",
+    "@tiptap/extension-highlight": "3.34.0",
+    "@tiptap/extension-list": "3.34.0",
+    "@tiptap/pm": "3.34.0",
+    "@tiptap/starter-kit": "3.34.0",
+    "better-auth": "1.7.25",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.19",
+    "idb": "8.0.4",
+    "solid-js": "^1.9.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "drizzle-kit": "0.31.11",
+    "oxfmt": "0.79.0",
+    "oxlint": "1.94.0",
+    "playwright-core": "1.65.1",
+    "sass": "1.108.2",
+    "typescript": "~6.0.0",
+    "vite": "8.3.8",
+    "vite-plugin-pwa": "2.0.0",
+    "vite-plugin-solid": "2.11.16",
+    "workbox-build": "^7.4.1",
+    "workbox-window": "^7.4.1"
+  },
+  "packageManager": "bun@1.4.4"
+}
