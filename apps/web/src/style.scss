@@ -146,6 +146,17 @@ select {
   letter-spacing: -0.035em;
   white-space: nowrap;
 }
+.note-logo {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+  mask: url('/logo.svg') center / contain no-repeat;
+}
+.note-logo-large {
+  width: 30px;
+  height: 30px;
+}
 .brand-mark {
   display: inline-grid;
   width: 34px;

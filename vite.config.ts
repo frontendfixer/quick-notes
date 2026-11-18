@@ -23,7 +23,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
         // Move older installations off the cache-first shell without reloading open editors.
         cacheId: 'quick-notes-network-navigation',
         cleanupOutdatedCaches: false,

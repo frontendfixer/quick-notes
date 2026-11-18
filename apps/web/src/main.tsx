@@ -20,7 +20,6 @@ import {
   Pencil,
   LockKeyhole,
   LogOut,
-  NotebookPen,
   Pin,
   Plus,
   RefreshCw,
@@ -1166,7 +1165,7 @@ function App() {
             <section class="login-card" aria-label="Quick Notes account access">
               <div class="brand">
                 <span class="brand-mark">
-                  <NotebookPen size={19} />
+                  <span class="note-logo" aria-hidden="true" />
                 </span>
                 Quick Notes
               </div>
@@ -1225,7 +1224,7 @@ function App() {
           <header class="sidebar-header">
             <div class="brand">
               <span class="brand-mark">
-                <NotebookPen size={19} />
+                <span class="note-logo" aria-hidden="true" />
               </span>
               Quick Notes
             </div>
@@ -1535,7 +1534,7 @@ function App() {
             fallback={
               <section class="empty">
                 <div class="empty-icon">
-                  <NotebookPen size={30} strokeWidth={1.6} />
+                  <span class="note-logo note-logo-large" aria-hidden="true" />
                 </div>
                 <h1>Select a note</h1>
                 <p>Choose one from the sidebar or start a new note.</p>
