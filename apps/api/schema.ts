@@ -25,6 +25,13 @@ export const user = pgTable('user', {
   createdAt: date('created_at').notNull().defaultNow(),
   updatedAt: date('updated_at').notNull().defaultNow(),
 })
+export const signupWaitlist = pgTable('signup_waitlist', {
+  id: uuid('id').primaryKey(),
+  email: text('email').notNull(),
+  passwordHash: text('password_hash'),
+  requestedAt: date('requested_at').notNull().defaultNow(),
+  approvedAt: date('approved_at'),
+})
 export const session = pgTable('session', {
   id: text('id').primaryKey(),
   token: text('token').notNull().unique(),

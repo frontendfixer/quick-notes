@@ -243,3 +243,31 @@ integration(
     }
   },
 )
+
+integration('waitlist signup creates no account until database approval', async () => {
+  const { eq } = await import('drizzle-orm')
+  const { db } = await import('../apps/api/db')
+  const { signupWaitlist, user } = await import('../apps/api/schema')
+  const email = crypto.randomUUID() + '@example.test'
+  const invalid = await request('/signup-waitlist', '', { email, password: 'short' })
+  expect(invalid.status).toBe(422)
+  const submission = await request('/signup-waitlist', '', { email: email.toUpperCase(), password })
+  expect(submission.status).toBe(202)
+  expect(submission.headers.get('Set-Cookie')).toBeNull()
+  const { id } = await submission.json()
+  const [pending] = await db.select().from(signupWaitlist).where(eq(signupWaitlist.id, id))
+  expect(pending.email).toBe(email)
+  expect(pending.passwordHash).toBeString()
+  expect(pending.passwordHash).not.toBe(password)
+  expect(pending.approvedAt).toBeNull()
+  expect(await db.select().from(user).where(eq(user.email, email))).toHaveLength(0)
+  expect((await request('/auth/sign-in/email', '', { email, password })).status).toBe(401)
+  await db.update(signupWaitlist).set({ approvedAt: new Date() }).where(eq(signupWaitlist.id, id))
+  const [approved] = await db.select().from(signupWaitlist).where(eq(signupWaitlist.id, id))
+  expect(approved.approvedAt).toBeInstanceOf(Date)
+  expect(approved.passwordHash).toBeNull()
+  const response = await request('/auth/sign-in/email', '', { email, password })
+  expect(response.status).toBe(200)
+  const cookie = response.headers.getSetCookie()[0].split(';')[0]
+  expect((await request('/notes', cookie)).status).toBe(200)
+})

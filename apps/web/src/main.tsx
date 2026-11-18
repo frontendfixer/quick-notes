@@ -93,7 +93,7 @@ function download(name: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function PasswordField(props: { placeholder?: string }) {
+function PasswordField(props: { placeholder?: string; signup?: boolean }) {
   const [visible, setVisible] = createSignal(false)
   return (
     <div class="password-field">
@@ -102,7 +102,9 @@ function PasswordField(props: { placeholder?: string }) {
         aria-label="Password"
         type={visible() ? 'text' : 'password'}
         placeholder={props.placeholder}
-        autocomplete="current-password"
+        autocomplete={props.signup ? 'new-password' : 'current-password'}
+        minlength={props.signup ? 12 : undefined}
+        maxlength={props.signup ? 128 : undefined}
         required
       />
       <button
@@ -120,7 +122,104 @@ function PasswordField(props: { placeholder?: string }) {
   )
 }
 
+function WaitlistForm(props: { signIn: () => void }) {
+  const [busy, setBusy] = createSignal(false)
+  const [error, setError] = createSignal('')
+  const [requestId, setRequestId] = createSignal('')
+  const [copied, setCopied] = createSignal(false)
+
+  async function submit(event: SubmitEvent) {
+    event.preventDefault()
+    if (busy()) return
+    const data = new FormData(event.currentTarget as HTMLFormElement)
+    setBusy(true)
+    setError('')
+    try {
+      const response = await fetch('/api/signup-waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.get('email'), password: data.get('password') }),
+      })
+      const result: { id?: string; error?: string } = await response.json()
+      if (!response.ok || !result.id)
+        throw new Error(result.error ?? 'Could not submit the request.')
+      setRequestId(result.id)
+    } catch (error) {
+      setError(
+        error instanceof Error && error.name === 'Error'
+          ? error.message
+          : 'Could not submit the request. Try again.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <Show
+        when={requestId()}
+        fallback={
+          <>
+            <h1>Request access</h1>
+            <p class="login-description">An approval is required before you can sign in.</p>
+            <form onSubmit={submit}>
+              <label>
+                Email
+                <input name="email" type="email" autocomplete="email" maxlength="254" required />
+              </label>
+              <span class="password-label">Password</span>
+              <PasswordField signup placeholder="At least 12 characters" />
+              <button class="primary login-submit" disabled={busy()}>
+                {busy() ? 'Submitting…' : 'Join waitlist'}
+                <ArrowRight size={17} />
+              </button>
+            </form>
+            <Show when={error()}>
+              <p class="inline-error" role="alert">
+                {error()}
+              </p>
+            </Show>
+          </>
+        }
+      >
+        <h1>Request received</h1>
+        <p class="login-description">
+          Share your request ID with the owner. After approval, sign in with the email and password
+          you entered.
+        </p>
+        <div class="waitlist-id">
+          <code>{requestId()}</code>
+          <button
+            type="button"
+            class="secondary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(requestId())
+                setCopied(true)
+              } catch {
+                setError('Select and copy the request ID above.')
+              }
+            }}
+          >
+            {copied() ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <Show when={error()}>
+          <p class="inline-error" role="alert">
+            {error()}
+          </p>
+        </Show>
+      </Show>
+      <button class="login-switch" onClick={props.signIn}>
+        Back to sign in
+      </button>
+    </>
+  )
+}
+
 function App() {
+  const [joiningWaitlist, setJoiningWaitlist] = createSignal(false)
   const [owner, setOwner] = createSignal<string>()
   const [ready, setReady] = createSignal(false)
   const [authorized, setAuthorized] = createSignal(false)
@@ -1077,22 +1176,37 @@ function App() {
                   </p>
                 }
               >
-                <h1>Sign in</h1>
-                <p class="login-description">Open your private notes on this device.</p>
-                <form onSubmit={signIn}>
-                  <label>
-                    Email
-                    <input name="email" type="email" autocomplete="username" required />
-                  </label>
-                  <span class="password-label">Password</span>
-                  <PasswordField />
-                  <button class="primary login-submit" disabled={signingIn() || unavailable()}>
-                    {signingIn() ? 'Signing in…' : 'Sign in'}
-                    <ArrowRight size={17} />
+                <Show
+                  when={!joiningWaitlist()}
+                  fallback={<WaitlistForm signIn={() => setJoiningWaitlist(false)} />}
+                >
+                  <h1>Sign in</h1>
+                  <p class="login-description">Open your private notes on this device.</p>
+                  <form onSubmit={signIn}>
+                    <label>
+                      Email
+                      <input name="email" type="email" autocomplete="username" required />
+                    </label>
+                    <span class="password-label">Password</span>
+                    <PasswordField />
+                    <button class="primary login-submit" disabled={signingIn() || unavailable()}>
+                      {signingIn() ? 'Signing in…' : 'Sign in'}
+                      <ArrowRight size={17} />
+                    </button>
+                  </form>
+                  <Show when={unavailable()}>
+                    <p class="muted">Connect to sign in on this device.</p>
+                  </Show>
+                  <button
+                    class="login-switch"
+                    disabled={signingIn() || unavailable()}
+                    onClick={() => {
+                      setNotice('')
+                      setJoiningWaitlist(true)
+                    }}
+                  >
+                    Request access
                   </button>
-                </form>
-                <Show when={unavailable()}>
-                  <p class="muted">Connect to sign in on this device.</p>
                 </Show>
               </Show>
               <Show when={notice()}>

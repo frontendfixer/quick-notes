@@ -916,3 +916,22 @@ mark {
 .sidebar .password-field {
   width: 100%;
 }
+
+.login-switch {
+  margin-top: 13px;
+  min-height: 36px;
+  padding: 6px 8px;
+  color: var(--accent);
+  font-weight: 650;
+  font-size: 0.84rem;
+}
+.waitlist-id {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.waitlist-id code {
+  overflow-wrap: anywhere;
+  font-size: 0.77rem;
+}

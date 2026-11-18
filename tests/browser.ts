@@ -299,6 +299,20 @@ try {
   await restarted.getByRole('button', { name: 'Tickets', exact: true }).waitFor()
   assert.equal(await restarted.getByRole('button', { name: 'Map', exact: true }).count(), 0)
   console.log('Folders support create, rename, note moves, and immediate Trash on delete')
+  const applicant = await browser.newPage()
+  await applicant.goto(origin)
+  await applicant.getByRole('button', { name: 'Request access' }).click()
+  await applicant.getByLabel('Email').fill('waitlist-review@example.test')
+  await applicant.getByLabel('Password', { exact: true }).fill(password)
+  await applicant.getByRole('button', { name: 'Join waitlist' }).click()
+  await applicant.getByRole('heading', { name: 'Request received' }).waitFor()
+  assert.match(
+    (await applicant.locator('.waitlist-id code').textContent()) ?? '',
+    /^[a-f0-9-]{36}$/,
+  )
+  await applicant.getByRole('button', { name: 'Back to sign in' }).click()
+  await applicant.getByRole('heading', { name: 'Sign in' }).waitFor()
+  await applicant.close()
   assert.deepEqual(errors, [])
   console.log(
     'Chromium passed offline restart, three durable drafts, mobile checklists, tab ownership, conflict copy, and export.',

@@ -28,6 +28,26 @@ Build static assets with `bun install --frozen-lockfile` and `bun run build`; ru
 
 For password recovery, run `bun run account:reset-password you@example.com` and pass the new password via stdin as in the provisioning example. The reset revokes existing sessions. Signup is available through the provisioning command.
 
+## Approve signup requests
+
+The sign-in page links to **Request access**. The user chooses a password and receives a request ID. Confirm that the applicant sent you the matching request ID through a channel you trust before approving it. The app does not send verification or approval email.
+
+Run these statements in the Quick Notes PostgreSQL database:
+
+```sql
+SELECT id, email, requested_at
+FROM signup_waitlist
+WHERE approved_at IS NULL
+ORDER BY requested_at;
+
+UPDATE signup_waitlist
+SET approved_at = now()
+WHERE id = '<request-id>' AND approved_at IS NULL
+RETURNING id, email, approved_at;
+```
+
+Approval creates the account and clears the pending password hash in the same transaction. The applicant can then sign in with the password they chose. Remove rejected requests with `DELETE FROM signup_waitlist WHERE id = '<request-id>' AND approved_at IS NULL;`.
+
 ## Writing and recovery
 
 **Saved on device** means the local transaction completed. **Saved to server** means the server acknowledged the current draft. Drafts still pending when the browser profile is cleared or evicted are recoverable only from a prior download. One tab per account and browser profile edits at a time. Close the writable tab to hand off editing. Another device can edit concurrently and receives a conflict when its base revision is stale.

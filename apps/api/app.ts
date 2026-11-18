@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { mutation, plainText, folderName } from '../../packages/contracts'
 import { auth, trustedOrigins } from './auth'
 import { db } from './db'
-import { notes, receipts, folders } from './schema'
+import { notes, receipts, folders, signupWaitlist } from './schema'
 
 export const app = new Hono<{ Variables: { owner: string } }>()
 app.use(
@@ -33,6 +33,33 @@ app.use('/api/*', async (c, next) => {
     return c.json({ error: 'Unexpected origin' }, 403)
   }
   await next()
+})
+const signupRequest = z.object({
+  email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
+  password: z.string().min(12).max(128),
+})
+app.post('/api/signup-waitlist', bodyLimit({ maxSize: 4096 }), async (c) => {
+  const input = signupRequest.safeParse(await c.req.json().catch(() => null))
+  if (!input.success)
+    return c.json({ error: 'Enter a valid email and a password of 12–128 characters.' }, 422)
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended('quick-notes-signup-waitlist', 0))`,
+    )
+    const [recent] = await tx
+      .select({ total: sql<number>`count(*)::int` })
+      .from(signupWaitlist)
+      .where(sql`${signupWaitlist.requestedAt} > now() - interval '1 minute'`)
+    if (recent.total >= 10) return c.json({ error: 'Too many requests. Try again shortly.' }, 429)
+    const { password } = await auth.$context
+    const id = crypto.randomUUID()
+    await tx.insert(signupWaitlist).values({
+      id,
+      email: input.data.email,
+      passwordHash: await password.hash(input.data.password),
+    })
+    return c.json({ id }, 202)
+  })
 })
 app.on(['GET', 'POST'], '/api/auth/*', bodyLimit({ maxSize: 16384 }), (c) =>
   auth.handler(c.req.raw),
