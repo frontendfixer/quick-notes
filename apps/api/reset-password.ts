@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm'
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../../packages/contracts'
 import { auth } from './auth'
 import { db } from './db'
 import { account, session, user } from './schema'
@@ -6,8 +7,10 @@ import { account, session, user } from './schema'
 const email = Bun.argv[2]
 if (!email) throw new Error('Usage: bun run account:reset-password EMAIL < password-file')
 const next = (await Bun.stdin.text()).replace(/\r?\n$/, '')
-if (next.length < 12 || next.length > 128)
-  throw new Error('Password must be between 12 and 128 characters')
+if (next.length < MIN_PASSWORD_LENGTH || next.length > MAX_PASSWORD_LENGTH)
+  throw new Error(
+    `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters`,
+  )
 const { password } = await auth.$context
 const hash = await password.hash(next)
 await db.transaction(async (tx) => {

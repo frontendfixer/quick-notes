@@ -9,7 +9,7 @@ Requires Bun 1.4.4 and PostgreSQL 18. Docker Compose can provide PostgreSQL.
 1. Run `bun install --frozen-lockfile` and copy `.env.example` to `.env`.
 2. Generate a session secret with `openssl rand -hex 32` and set `BETTER_AUTH_SECRET` in `.env`. Set `POSTGRES_PASSWORD` and the corresponding password in `DATABASE_URL`. Use a URL-safe database password or encode it in the URL.
 3. Run `docker compose up -d db`, then `bun run db:migrate`.
-4. Provision a user from Bash. Enter a password of at least 12 characters when prompted.
+4. Provision a user from Bash. Enter a password of at least 8 characters when prompted.
 
    ```bash
    read -r -s -p 'Quick Notes password: ' quick_notes_password

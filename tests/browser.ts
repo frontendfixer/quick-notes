@@ -304,7 +304,7 @@ try {
   await applicant.getByRole('button', { name: 'Sign up' }).click()
   await applicant.getByRole('heading', { name: 'Sign up', exact: true }).waitFor()
   await applicant.getByLabel('Email').fill('waitlist-review@example.test')
-  await applicant.getByLabel('Password', { exact: true }).fill(password)
+  await applicant.getByLabel('Password', { exact: true }).fill('m7#X9z!Q')
   await applicant.getByRole('button', { name: 'Join waitlist' }).click()
   await applicant.getByRole('heading', { name: 'Request received' }).waitFor()
   assert.match(

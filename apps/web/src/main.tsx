@@ -46,6 +46,8 @@ import { render } from 'solid-js/web'
 import { registerSW } from 'virtual:pwa-register'
 import {
   emptyNote,
+  MIN_PASSWORD_LENGTH,
+  MAX_PASSWORD_LENGTH,
   type Ack,
   type Note,
   type NoteFields,
@@ -102,8 +104,8 @@ function PasswordField(props: { placeholder?: string; signup?: boolean }) {
         type={visible() ? 'text' : 'password'}
         placeholder={props.placeholder}
         autocomplete={props.signup ? 'new-password' : 'current-password'}
-        minlength={props.signup ? 12 : undefined}
-        maxlength={props.signup ? 128 : undefined}
+        minlength={props.signup ? MIN_PASSWORD_LENGTH : undefined}
+        maxlength={props.signup ? MAX_PASSWORD_LENGTH : undefined}
         required
       />
       <button
@@ -168,7 +170,7 @@ function WaitlistForm(props: { signIn: () => void }) {
                 <input name="email" type="email" autocomplete="email" maxlength="254" required />
               </label>
               <span class="password-label">Password</span>
-              <PasswordField signup placeholder="At least 12 characters" />
+              <PasswordField signup placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`} />
               <button class="primary login-submit" disabled={busy()}>
                 {busy() ? 'Submitting…' : 'Join waitlist'}
                 <ArrowRight size={17} />

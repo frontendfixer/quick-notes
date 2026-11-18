@@ -4,7 +4,13 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { secureHeaders } from 'hono/secure-headers'
 import { z } from 'zod'
-import { mutation, plainText, folderName } from '../../packages/contracts'
+import {
+  mutation,
+  plainText,
+  folderName,
+  MIN_PASSWORD_LENGTH,
+  MAX_PASSWORD_LENGTH,
+} from '../../packages/contracts'
 import { auth, trustedOrigins } from './auth'
 import { db } from './db'
 import { notes, receipts, folders, signupWaitlist } from './schema'
@@ -36,12 +42,17 @@ app.use('/api/*', async (c, next) => {
 })
 const signupRequest = z.object({
   email: z.string().trim().max(254).toLowerCase().pipe(z.email()),
-  password: z.string().min(12).max(128),
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(MAX_PASSWORD_LENGTH),
 })
 app.post('/api/signup-waitlist', bodyLimit({ maxSize: 4096 }), async (c) => {
   const input = signupRequest.safeParse(await c.req.json().catch(() => null))
   if (!input.success)
-    return c.json({ error: 'Enter a valid email and a password of 12–128 characters.' }, 422)
+    return c.json(
+      {
+        error: `Enter a valid email and a password of ${MIN_PASSWORD_LENGTH}–${MAX_PASSWORD_LENGTH} characters.`,
+      },
+      422,
+    )
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended('quick-notes-signup-waitlist', 0))`,

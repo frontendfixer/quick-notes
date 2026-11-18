@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../../packages/contracts'
 import { db } from './db'
 import * as schema from './schema'
 
@@ -29,7 +30,12 @@ export function createAuth(provision = false) {
     baseURL: origin,
     secret,
     database: drizzleAdapter(db, { provider: 'pg', schema }),
-    emailAndPassword: { enabled: true, disableSignUp: !provision, minPasswordLength: 12 },
+    emailAndPassword: {
+      enabled: true,
+      disableSignUp: !provision,
+      minPasswordLength: MIN_PASSWORD_LENGTH,
+      maxPasswordLength: MAX_PASSWORD_LENGTH,
+    },
     trustedOrigins,
     advanced: {
       useSecureCookies: origin.startsWith('https:'),

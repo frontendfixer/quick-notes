@@ -249,7 +249,8 @@ integration('waitlist signup creates no account until database approval', async 
   const { db } = await import('../apps/api/db')
   const { signupWaitlist, user } = await import('../apps/api/schema')
   const email = crypto.randomUUID() + '@example.test'
-  const invalid = await request('/signup-waitlist', '', { email, password: 'short' })
+  const password = 'm7#X9z!Q'
+  const invalid = await request('/signup-waitlist', '', { email, password: password.slice(0, -1) })
   expect(invalid.status).toBe(422)
   const submission = await request('/signup-waitlist', '', { email: email.toUpperCase(), password })
   expect(submission.status).toBe(202)
