@@ -16,10 +16,20 @@ try {
   const errors: unknown[] = []
   page.on('pageerror', (error) => errors.push(error))
   await page.route('**/api/**', async (route) => {
-    const path = new URL(route.request().url()).pathname
+    const { pathname: path, searchParams } = new URL(route.request().url())
     if (path === '/api/me') return route.fulfill({ json: { id: 'editor-test' } })
     if (path === '/api/folders') return route.fulfill({ json: [] })
-    if (path === '/api/notes') return route.fulfill({ json: { notes: [...notes.values()] } })
+    if (path === '/api/notes') {
+      const view = searchParams.get('view')
+      return route.fulfill({
+        json: {
+          notes: [...notes.values()].filter((note) =>
+            note.deleted ? view === 'trash' : view === 'active',
+          ),
+          next: null,
+        },
+      })
+    }
     const id = path.split('/').at(-1)!
     if (route.request().method() === 'PUT') {
       const input = mutation.safeParse(route.request().postDataJSON())
@@ -34,9 +44,17 @@ try {
       return route.fulfill({ json: { mutationId, revision, updatedAt } })
     }
     const note = notes.get(id)
+    if (route.request().method() === 'DELETE') {
+      assert.equal(note?.deleted, true)
+      assert.equal(route.request().headers()['if-match'], '"' + note?.revision + '"')
+      notes.delete(id)
+      return route.fulfill({ status: 204 })
+    }
+    if (note && route.request().headers()['if-none-match'] === '"' + note.revision + '"')
+      return route.fulfill({ status: 304 })
     return note ? route.fulfill({ json: note }) : route.fulfill({ status: 404 })
   })
-  await page.goto(process.env.APP_ORIGIN ?? 'http://127.0.0.1:4179')
+  await page.goto(process.env.APP_ORIGIN ?? 'http://127.0.0.1:4179', { timeout: 30000 })
   const button = (name: string) => page.getByRole('button', { name, exact: true })
   await button('Create menu').click()
   await page.getByRole('menuitem', { name: 'Create Note' }).click()
@@ -212,7 +230,47 @@ ul[data-type="taskList"] > li { list-style: none; display: flex; gap: .5rem; }
 `,
     )
   }
-  console.log('Rich text toolbar, mixed content, autosave and reload passed in Chromium.')
+  const [journal] = notes.values()
+  notes.set(journal.id, { ...journal, revision: journal.revision + 1, title: 'Updated journal' })
+  await button('Refresh note').click()
+  await page.waitForFunction(
+    () => document.querySelector<HTMLInputElement>('.note-title')?.value === 'Updated journal',
+  )
+  await button('Back to notes').click()
+  const trashed = {
+    ...journal,
+    id: crypto.randomUUID(),
+    revision: 1,
+    title: 'Old journal',
+    deleted: true,
+  }
+  notes.set(trashed.id, trashed)
+  await page.getByRole('button', { name: 'Account options', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Trash', exact: true }).click()
+  await button('Old journal').waitFor()
+  await button('Old journal').click()
+  await button('Delete permanently').click()
+  const confirmation = page.getByRole('alertdialog', { name: 'Delete note permanently?' })
+  await confirmation.getByRole('button', { name: 'Cancel' }).click()
+  assert.equal(notes.has(trashed.id), true)
+  await button('Delete permanently').click()
+  const deletion = page.waitForResponse(
+    (response) => response.request().method() === 'DELETE' && response.url().endsWith(trashed.id),
+  )
+  await confirmation.getByRole('button', { name: 'Delete permanently', exact: true }).click()
+  assert.equal((await deletion).status(), 204)
+  await page.getByRole('heading', { name: 'Trash is empty', exact: true }).waitFor()
+  assert.equal(await button('Old journal').count(), 0)
+  assert.equal(notes.has(trashed.id), false)
+  await button('Back to home').click()
+  const remote = { ...journal, id: crypto.randomUUID(), revision: 1, title: 'Remote journal' }
+  notes.set(remote.id, remote)
+  await button('Refresh notes list').click()
+  await button('Remote journal').waitFor()
+  assert.deepEqual(errors, [])
+  console.log(
+    'Rich text, autosave, manual refresh, and confirmed Trash deletion passed in Chromium.',
+  )
 } finally {
   await browser.close()
 }

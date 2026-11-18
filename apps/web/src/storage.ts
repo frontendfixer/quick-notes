@@ -67,6 +67,9 @@ export const local = {
     )
     await tx.done
   },
+  async dropSnapshot(owner: string, id: string) {
+    await (await database()).delete('snapshots', [owner, id])
+  },
   async snapshot(owner: string, id: string) {
     return (await (await database()).get('snapshots', [owner, id]))?.note
   },

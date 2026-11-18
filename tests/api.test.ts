@@ -9,10 +9,16 @@ let app: typeof import('../apps/api/app').app
 let first: string
 let second: string
 
-async function request(path: string, cookie = '', body?: unknown, method = body ? 'POST' : 'GET') {
+async function request(
+  path: string,
+  cookie = '',
+  body?: unknown,
+  method = body ? 'POST' : 'GET',
+  headers?: Record<string, string>,
+) {
   return app.request(origin + '/api' + path, {
     method,
-    headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' },
+    headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json', ...headers },
     body: body ? JSON.stringify(body) : undefined,
   })
 }
@@ -61,6 +67,10 @@ integration(
     const ack = await initial.json()
     expect(ack.revision).toBe(1)
     expect((await request(path, second)).status).toBe(404)
+    expect((await request(path, second, undefined, 'DELETE', { 'If-Match': '"1"' })).status).toBe(
+      204,
+    )
+    expect((await request(path, first)).status).toBe(200)
     const edit = (title: string) => ({
       mutationId: crypto.randomUUID(),
       expectedRevision: 1,
@@ -139,6 +149,15 @@ integration('keyset pagination and archive, trash and restore', async () => {
   expect((await update(2, true, true)).status).toBe(200)
   expect((await (await request('/notes?view=trash', second)).json()).notes).toHaveLength(1)
   expect((await update(3, true, false)).status).toBe(200)
+  expect((await (await request('/notes?view=trash', second)).json()).notes).toHaveLength(0)
+  const remove = (revision: number) =>
+    request('/notes/' + id, second, undefined, 'DELETE', { 'If-Match': '"' + revision + '"' })
+  expect((await remove(4)).status).toBe(409)
+  expect((await update(4, true, true)).status).toBe(200)
+  expect((await remove(4)).status).toBe(409)
+  expect((await remove(5)).status).toBe(204)
+  expect((await remove(5)).status).toBe(204)
+  expect((await request('/notes/' + id, second)).status).toBe(404)
   expect((await (await request('/notes?view=trash', second)).json()).notes).toHaveLength(0)
 })
 

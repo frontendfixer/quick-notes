@@ -12,6 +12,7 @@ import {
   FileText,
   Folder as FolderIcon,
   Pin,
+  RefreshCw,
   RotateCcw,
   Trash2,
   WifiOff,
@@ -19,6 +20,7 @@ import {
 import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js'
 import { Dynamic } from 'solid-js/web'
 import type { Folder, NoteFields } from '../../../../packages/contracts'
+import { ConfirmationDialog } from './confirmation-dialog'
 import { FolderPicker } from './folder-picker'
 
 export function NoteToolbar(props: {
@@ -27,6 +29,11 @@ export function NoteToolbar(props: {
   folders: Folder[]
   canEdit: boolean
   canRestore: boolean
+  canDeletePermanently: boolean
+  title: string
+  refreshing: boolean
+  onRefresh: () => void
+  onDeletePermanently: () => void
   hasSavedNote: boolean
   saveState: string
   saveLabel: string
@@ -94,18 +101,44 @@ export function NoteToolbar(props: {
             <span>{props.saveLabel}</span>
           </span>
         </Show>
+        <Button
+          class="icon-button"
+          title="Refresh note"
+          aria-label="Refresh note"
+          disabled={props.refreshing}
+          onClick={props.onRefresh}
+        >
+          <RefreshCw size={17} aria-hidden="true" />
+        </Button>
         <Show when={props.hasSavedNote}>
           <Show
             when={!props.fields.deleted}
             fallback={
-              <Button
-                class="secondary note-restore"
-                disabled={!props.canRestore}
-                onClick={props.onRestore}
-              >
-                <RotateCcw size={16} aria-hidden="true" />
-                Restore
-              </Button>
+              <>
+                <Button
+                  class="secondary note-restore"
+                  disabled={!props.canRestore}
+                  onClick={props.onRestore}
+                >
+                  <RotateCcw size={16} aria-hidden="true" />
+                  Restore
+                </Button>
+                <ConfirmationDialog
+                  trigger={<Trash2 size={17} aria-hidden="true" />}
+                  triggerClass="icon-button danger-action"
+                  triggerLabel="Delete permanently"
+                  disabled={!props.canDeletePermanently}
+                  title="Delete note permanently?"
+                  description={
+                    <>
+                      <strong>{props.title}</strong> will be permanently deleted. This cannot be
+                      undone.
+                    </>
+                  }
+                  confirmLabel="Delete permanently"
+                  onConfirm={props.onDeletePermanently}
+                />
+              </>
             }
           >
             <Show when={props.fields.archived}>

@@ -262,6 +262,30 @@ app.get('/api/notes/:id', async (c) => {
   if (c.req.header('If-None-Match') === tag) return c.body(null, 304)
   return c.json(noteResponse(note))
 })
+app.delete('/api/notes/:id', async (c) => {
+  const id = z.uuid().safeParse(c.req.param('id'))
+  const revision = z
+    .number()
+    .int()
+    .positive()
+    .safeParse(Number(/^"(\d+)"$/.exec(c.req.header('If-Match') ?? '')?.[1]))
+  if (!id.success || !revision.success) return c.json({ error: 'Invalid note or revision' }, 400)
+
+  const owner = c.get('owner')
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${owner}::text, 0))`)
+    const filter = and(eq(notes.owner, owner), eq(notes.id, id.data))
+    const [current] = await tx
+      .select({ revision: notes.revision, deletedAt: notes.deletedAt })
+      .from(notes)
+      .where(filter)
+    if (!current) return c.body(null, 204)
+    if (!current.deletedAt || current.revision !== revision.data)
+      return c.json({ error: 'The note changed. Refresh it before deleting permanently.' }, 409)
+    await tx.delete(notes).where(filter)
+    return c.body(null, 204)
+  })
+})
 app.put('/api/notes/:id', bodyLimit({ maxSize: 512 * 1024 }), async (c) => {
   const id = z.uuid().safeParse(c.req.param('id'))
   const input = mutation.safeParse(await c.req.json().catch(() => null))

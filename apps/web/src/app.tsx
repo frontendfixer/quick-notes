@@ -157,7 +157,8 @@ export default function App() {
   let folderEpoch = 0
   let draftEpoch = 0
   let syncBusy = false
-  let refreshBusy = false
+  const [refreshing, setRefreshing] = createSignal(false)
+  const [deletingNote, setDeletingNote] = createSignal<string>()
   let refreshAgain = false
   let queue: Promise<unknown> = Promise.resolve()
   let localTimer: ReturnType<typeof setTimeout> | undefined
@@ -378,7 +379,7 @@ export default function App() {
     if (currentFolder) params.set('folder', currentFolder)
     else if (tab === 'active') params.set('unfiled', 'true')
     if (append && next()) params.set('cursor', next()!)
-    const response = await fetch('/api/notes?' + params)
+    const response = await fetch('/api/notes?' + params, { signal: AbortSignal.timeout(5000) })
     if (request !== listEpoch || owner() !== id) return
     if (response.status === 401) return expire()
     if (!response.ok) throw new Error('Could not load notes')
@@ -469,13 +470,17 @@ export default function App() {
       })
       if (response.status === 401) return expire()
       if (response.status === 304) return
-      if (response.status === 404 && !draft) {
+      if (
+        response.status === 404 &&
+        !draft &&
+        edit === editEpoch &&
+        !draftFor(id) &&
+        !pending.has(id)
+      ) {
         if (request === selection && owner() === account) {
-          if (open()?.id === id) {
-            setOpen(undefined)
-            setShowEditor(false)
-          }
-          if (readScreen().note === id) updateScreen('replace')
+          await local.dropSnapshot(account, id).catch(storageError)
+          if (request !== selection || owner() !== account || edit !== editEpoch) return
+          closeUnavailableNote(id)
           setNotice('This note is no longer available.')
         }
         return
@@ -509,6 +514,66 @@ export default function App() {
       if (request === selection) setNotice('Could not open note. Try again when connected.')
     } finally {
       if (request === selection) setOpening(false)
+    }
+  }
+
+  function closeUnavailableNote(id: string) {
+    if (open()?.id === id) {
+      setOpen(undefined)
+      setShowEditor(false)
+    }
+    if (readScreen().note === id) updateScreen('replace')
+    setNotes((previous) => previous.filter((note) => note.id !== id))
+  }
+
+  function canDeletePermanently() {
+    const current = open()
+    return Boolean(
+      current?.base &&
+      fields().deleted &&
+      writable() &&
+      authorized() &&
+      !unavailable() &&
+      !signingOut() &&
+      !folderBusy() &&
+      !deletingNote() &&
+      !activeDraft() &&
+      status() === 'Saved to server' &&
+      !pending.has(current.id),
+    )
+  }
+
+  async function deletePermanently() {
+    const current = open()
+    if (!current || !canDeletePermanently()) return
+    setDeletingNote(current.id)
+    try {
+      const response = await fetch('/api/notes/' + current.id, {
+        method: 'DELETE',
+        headers: { 'If-Match': '"' + current.base + '"' },
+        signal: AbortSignal.timeout(5000),
+      })
+      if (response.status === 401) return expire()
+      if (response.status === 409) {
+        notify('The note changed. Refresh it before deleting permanently.', { error: true })
+        return
+      }
+      if (!response.ok) throw new Error('Could not delete note')
+      await local.dropSnapshot(current.owner, current.id).catch(storageError)
+      if (owner() === current.owner) {
+        ++listEpoch
+        closeUnavailableNote(current.id)
+        notify('Note permanently deleted')
+        void safeList()
+        requestAnimationFrame(() => {
+          if (!showEditor())
+            collectionPanel?.querySelector<HTMLButtonElement>('[data-collection-back]')?.focus()
+        })
+      }
+    } catch {
+      notify('Could not delete note. Try again when connected.', { error: true })
+    } finally {
+      setDeletingNote(undefined)
     }
   }
 
@@ -796,12 +861,12 @@ export default function App() {
     }
   }
 
-  async function refresh() {
-    if (refreshBusy || signingIn() || signingOut()) {
+  async function refresh(manual = false) {
+    if (refreshing() || signingIn() || signingOut()) {
       refreshAgain = true
       return
     }
-    refreshBusy = true
+    setRefreshing(true)
     try {
       let response: Response | undefined
       try {
@@ -834,11 +899,13 @@ export default function App() {
         await safeList()
         const restored = await restoreNoteFromUrl()
         if (authorized()) {
-          void upload()
+          if (manual) await upload()
+          else void upload()
           const current = open()
           if (
             current &&
             current.base !== null &&
+            deletingNote() !== current.id &&
             !restored &&
             showEditor() &&
             !opening() &&
@@ -852,19 +919,30 @@ export default function App() {
               headers: { 'If-None-Match': '"' + current.base + '"' },
               signal: AbortSignal.timeout(5000),
             })
+            const stillCurrent = () =>
+              open() === current &&
+              owner() === current.owner &&
+              deletingNote() !== current.id &&
+              !current.composing &&
+              epoch === editEpoch &&
+              request === selection &&
+              !draftFor(current.id) &&
+              !pending.has(current.id)
             if (result.status === 401) expire()
-            if (result.ok) {
-              const note: Note = await result.json()
-              await local.cache(current.owner, note, current.id).catch(storageError)
-              if (
-                open() === current &&
-                !current.composing &&
-                epoch === editEpoch &&
-                request === selection &&
-                note.revision > (current.base ?? 0)
-              ) {
-                loadEditor(current.id, current.owner, note.revision, note)
+            else if (result.status === 404 && stillCurrent()) {
+              await local.dropSnapshot(current.owner, current.id).catch(storageError)
+              if (stillCurrent()) {
+                closeUnavailableNote(current.id)
+                notify('This note is no longer available.')
               }
+            } else if (result.ok) {
+              const note: Note = await result.json()
+              if (!stillCurrent()) return
+              await local.cache(current.owner, note, current.id).catch(storageError)
+              if (stillCurrent() && note.revision > (current.base ?? 0))
+                loadEditor(current.id, current.owner, note.revision, note)
+            } else if (manual && result.status !== 304 && result.status !== 404) {
+              throw new Error('Could not refresh note')
             }
           }
         }
@@ -872,7 +950,7 @@ export default function App() {
     } catch {
       setNotice('Refresh paused. Reconnect or try again.')
     } finally {
-      refreshBusy = false
+      setRefreshing(false)
       setReady(true)
       if (refreshAgain && !signingIn() && !signingOut()) {
         refreshAgain = false
@@ -1267,7 +1345,7 @@ export default function App() {
     key: 'archived' | 'deleted',
     value: boolean,
   ) {
-    if (owner() !== account || !writable() || signingOut()) return
+    if (owner() !== account || !writable() || signingOut() || deletingNote() === id) return
     const queued = await ordered(async () => {
       const alreadyOpen = () => open()?.id === id
       const undoOpen = () => {
@@ -1280,7 +1358,7 @@ export default function App() {
         local.snapshot(account, id),
         local.drafts(account),
       ])
-      if (owner() !== account || !writable() || signingOut()) return false
+      if (owner() !== account || !writable() || signingOut() || deletingNote() === id) return false
       if (alreadyOpen()) return undoOpen()
       const edit = pending.get(id)
       const draft = saved.find((item) => item.id === id)
@@ -1588,25 +1666,36 @@ export default function App() {
                           ? 'Deleted notes'
                           : 'Notes'}
                   </h2>
-                  <Show
-                    when={
-                      authorized() &&
-                      !unavailable() &&
-                      (visibleIds().length > 0 || (home() && folders().length > 0))
-                    }
-                  >
-                    <SortMenu
-                      value={sort()}
-                      mount={sidebar}
-                      onChange={(value) => {
-                        if (sort() === value) return
-                        setSort(value)
-                        updateScreen('replace', readScreen().note)
-                        if (notesPanel && (!home() || query().trim())) notesPanel.scrollTop = 0
-                        void safeList()
-                      }}
-                    />
-                  </Show>
+                  <div class="list-heading-actions">
+                    <Show
+                      when={
+                        authorized() &&
+                        !unavailable() &&
+                        (visibleIds().length > 0 || (home() && folders().length > 0))
+                      }
+                    >
+                      <SortMenu
+                        value={sort()}
+                        mount={sidebar}
+                        onChange={(value) => {
+                          if (sort() === value) return
+                          setSort(value)
+                          updateScreen('replace', readScreen().note)
+                          if (notesPanel && (!home() || query().trim())) notesPanel.scrollTop = 0
+                          void safeList()
+                        }}
+                      />
+                    </Show>
+                    <Button
+                      class="icon-button"
+                      title="Refresh notes list"
+                      aria-label="Refresh notes list"
+                      disabled={refreshing() || signingOut()}
+                      onClick={() => void refresh(true)}
+                    >
+                      <RefreshCw size={17} aria-hidden="true" />
+                    </Button>
+                  </div>
                 </div>
               </Show>
               <Show when={home() && !query().trim()}>
@@ -1749,7 +1838,14 @@ export default function App() {
                   fields={fields()}
                   folders={folders()}
                   canEdit={canEdit()}
-                  canRestore={writable() && !signingOut() && !folderBusy()}
+                  canRestore={
+                    writable() && !signingOut() && !folderBusy() && deletingNote() !== note.id
+                  }
+                  canDeletePermanently={canDeletePermanently()}
+                  refreshing={refreshing() || deletingNote() === note.id}
+                  onRefresh={() => void refresh(true)}
+                  onDeletePermanently={() => void deletePermanently()}
+                  title={label(title())}
                   hasSavedNote={note.base !== null || Boolean(activeDraft())}
                   saveState={saveText()}
                   saveLabel={saveLabel()}

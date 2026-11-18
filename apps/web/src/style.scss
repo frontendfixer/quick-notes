@@ -212,6 +212,11 @@ select {
   min-height: 47px;
   margin: 1px 3px 0 9px;
 }
+.list-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .list-heading h2 {
   margin: 0;
   font-size: 0.76rem;
