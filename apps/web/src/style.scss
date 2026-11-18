@@ -703,17 +703,44 @@ select {
   list-style: none;
   padding-left: 6px;
 }
-.tiptap ul[data-type='taskList'] li {
+.tiptap ul[data-type='taskList'] > li {
   display: flex;
   align-items: baseline;
   gap: 9px;
 }
-.tiptap ul[data-type='taskList'] input {
+.tiptap ul[data-type='taskList'] > li > div {
+  min-width: 0;
+}
+.tiptap ul[data-type='taskList'] > li > label > input {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
 }
-mark {
+.tiptap blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1em;
+  border-inline-start: 3px solid var(--line);
+}
+.tiptap pre,
+.tiptap :not(pre) > code {
+  background: var(--input);
+  border-radius: 5px;
+}
+.tiptap :not(pre) > code {
+  padding: 0.12em 0.28em;
+}
+.tiptap pre {
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+.tiptap hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin-block: 1.25em;
+}
+.tiptap mark {
   background: #f6e3a0;
   color: #312719;
 }

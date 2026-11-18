@@ -11,13 +11,23 @@ export type DocumentNode = {
   marks?: { type: string; attrs?: Record<string, unknown> }[]
 }
 
-const link = z
+const storedLink = z
   .string()
   .max(2048)
   .refine((value) => /^(https?:\/\/|mailto:)/i.test(value))
+
+export const noteLink = storedLink.refine((value) => {
+  if (/\s/.test(value)) return false
+  try {
+    const url = new URL(value)
+    return Boolean(url.protocol === 'mailto:' ? url.pathname : url.hostname)
+  } catch {
+    return false
+  }
+})
 const mark = z.union([
-  z.object({ type: z.enum(['bold', 'italic', 'underline', 'strike', 'highlight']) }),
-  z.object({ type: z.literal('link'), attrs: z.object({ href: link }) }),
+  z.object({ type: z.enum(['bold', 'italic', 'underline', 'strike', 'highlight', 'code']) }),
+  z.object({ type: z.literal('link'), attrs: z.object({ href: storedLink }) }),
 ])
 const empty = z.undefined().optional()
 const text = z.object({
@@ -36,10 +46,22 @@ const block: z.ZodType<DocumentNode> = z.lazy(() =>
   z.union([
     paragraph,
     heading,
+    z.object({ type: z.literal('blockquote'), content: z.array(block).min(1) }),
+    z.object({ type: z.literal('horizontalRule') }),
+    z.object({
+      type: z.literal('codeBlock'),
+      attrs: z.object({ language: z.string().nullable() }).optional(),
+      content: z.array(text.omit({ marks: true })).optional(),
+    }),
     z.object({ type: z.literal('bulletList'), content: z.array(listItem).min(1) }),
     z.object({
       type: z.literal('orderedList'),
-      attrs: z.object({ start: z.number().int().min(1).max(1000000) }).optional(),
+      attrs: z
+        .object({
+          start: z.number().int(),
+          type: z.enum(['1', 'a', 'A', 'i', 'I']).nullish().catch(null),
+        })
+        .optional(),
       content: z.array(listItem).min(1),
     }),
     z.object({ type: z.literal('taskList'), content: z.array(taskItem).min(1) }),
@@ -103,6 +125,7 @@ export type View = 'active' | 'archived' | 'trash'
 export function plainText(node: DocumentNode): string {
   if (node.text) return node.text
   if (node.type === 'hardBreak') return ' '
+  if (node.type === 'horizontalRule') return ''
   return (
     node.content
       ?.map(plainText)
