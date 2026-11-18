@@ -1,4 +1,5 @@
-import { Ellipsis, Type, X } from 'lucide-solid'
+import { Button } from '@kobalte/core/button'
+import { Ellipsis, X } from 'lucide-solid'
 import { animate } from 'motion/mini'
 import {
   createEffect,
@@ -122,7 +123,7 @@ export default function FormattingDock(props: {
       style={{ '--dock-keyboard': `${bottom()}px`, '--dock-height': `${availableHeight()}px` }}
       onMouseDown={(event) => event.preventDefault()}
     >
-      <button
+      <Button
         type="button"
         ref={(node) => {
           toggle = node
@@ -134,10 +135,17 @@ export default function FormattingDock(props: {
         title={open() ? 'Close formatting' : 'Open formatting'}
         onClick={() => (open() ? close() : setOpen(true))}
       >
-        <Show when={open()} fallback={<Type size={22} />}>
+        <Show
+          when={open()}
+          fallback={
+            <span class="format-symbol" aria-hidden="true">
+              Aa
+            </span>
+          }
+        >
           <X size={21} />
         </Show>
-      </button>
+      </Button>
       <AnimatedPanel
         id="note-format-tools"
         class="format-panel"
@@ -147,7 +155,7 @@ export default function FormattingDock(props: {
       >
         {props.tools(() => 0, fitting)}
         <Show when={fitting() < props.toolCount}>
-          <button
+          <Button
             type="button"
             ref={(node) => {
               moreButton = node
@@ -159,7 +167,7 @@ export default function FormattingDock(props: {
             onClick={() => setMore(!more())}
           >
             <Ellipsis size={21} />
-          </button>
+          </Button>
         </Show>
       </AnimatedPanel>
       <AnimatedPanel

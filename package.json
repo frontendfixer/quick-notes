@@ -17,6 +17,7 @@
     "format:check": "oxfmt --check ."
   },
   "dependencies": {
+    "@kobalte/core": "0.13.14",
     "@tiptap/core": "3.34.0",
     "@tiptap/extension-highlight": "3.34.0",
     "@tiptap/extension-list": "3.34.0",
