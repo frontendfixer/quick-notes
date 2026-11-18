@@ -14,4 +14,4 @@ COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY --from=build /app/packages ./packages
 ENV NODE_ENV=production HOST=0.0.0.0
 USER bun
-CMD ["bun", "run", "start"]
+CMD ["sh", "-c", "bun run db:migrate && exec bun apps/api/server.ts"]

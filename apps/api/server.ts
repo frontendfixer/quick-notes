@@ -6,7 +6,7 @@ import { db } from './db'
 app.get('/healthz', async (c) => {
   c.header('Cache-Control', 'no-store')
   try {
-    await db.execute(sql`select 1`)
+    await db.execute(sql`select 1 from "user" limit 1`)
     return c.text('ok')
   } catch {
     return c.text('Database unavailable', 503)
