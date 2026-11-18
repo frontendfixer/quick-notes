@@ -36,6 +36,13 @@
       "when": 1795012700810,
       "tag": "0004_familiar_photon",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795027799127,
+      "tag": "0005_folder_activity",
+      "breakpoints": true
     }
   ]
 }

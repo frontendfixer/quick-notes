@@ -84,13 +84,23 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/me', (c) => c.json({ id: c.get('owner') }))
 
 const folderFields = { id: folders.id, name: folders.name }
+const folderDetails = { ...folderFields, updatedAt: folders.updatedAt }
 const folderInput = z.object({ name: folderName })
 const byFolder = (owner: string, id: string) => and(eq(folders.owner, owner), eq(folders.id, id))
 
 app.get('/api/folders', async (c) => {
   return c.json(
     await db
-      .select(folderFields)
+      .select({
+        ...folderDetails,
+        noteCount: sql<number>`(
+          select count(*)::int from ${notes} as folder_note
+          where folder_note.folder_id = folders.id
+            and folder_note.owner = folders.owner
+            and folder_note.deleted_at is null
+            and not folder_note.archived
+        )`,
+      })
       .from(folders)
       .where(eq(folders.owner, c.get('owner')))
       .orderBy(asc(folders.name)),
@@ -107,7 +117,7 @@ app.post('/api/folders', bodyLimit({ maxSize: 2048 }), async (c) => {
       .insert(folders)
       .values({ id: crypto.randomUUID(), owner, name: input.data.name })
       .onConflictDoNothing()
-      .returning(folderFields)
+      .returning(folderDetails)
     if (!folder) return c.json({ error: 'A folder with that name already exists.' }, 409)
     return c.json(folder, 201)
   })
@@ -151,9 +161,9 @@ app.on(['PATCH', 'DELETE'], '/api/folders/:id', bodyLimit({ maxSize: 2048 }), as
     if (duplicate) return c.json({ error: 'A folder with that name already exists.' }, 409)
     const [folder] = await tx
       .update(folders)
-      .set({ name: input.data.name })
+      .set({ name: input.data.name, updatedAt: new Date() })
       .where(filter)
-      .returning(folderFields)
+      .returning(folderDetails)
     return c.json(folder)
   })
 })
@@ -176,6 +186,7 @@ function noteResponse<
 }
 const listQuery = z.object({
   folder: z.uuid().optional(),
+  unfiled: z.literal('true').optional(),
   view: z.enum(['active', 'archived', 'trash']).default('active'),
   sort: z.enum(['updated', 'title']).default('updated'),
   q: z.string().trim().max(150).default(''),
@@ -197,7 +208,8 @@ function decodeCursor(value: string) {
 app.get('/api/notes', async (c) => {
   const filters = listQuery.safeParse(c.req.query())
   if (!filters.success) return c.json({ error: 'Invalid search parameters' }, 400)
-  const { view, sort, q, cursor, folder } = filters.data
+  const { view, sort, q, cursor, folder, unfiled } = filters.data
+  if (folder && unfiled) return c.json({ error: 'Invalid search parameters' }, 400)
   const after = cursor ? decodeCursor(cursor) : null
   if (cursor && !after) return c.json({ error: 'Invalid cursor' }, 400)
 
@@ -213,12 +225,12 @@ app.get('/api/notes', async (c) => {
       ? sql`(${notes.pinned} < ${after.pinned} or (${notes.pinned} = ${after.pinned} and ${pageAfter}))`
       : pageAfter
   const rows = await db
-    .select(summaries)
+    .select({ ...summaries, preview: sql<string>`left(${notes.searchText}, 180)` })
     .from(notes)
     .where(
       and(
         eq(notes.owner, c.get('owner')),
-        folder ? eq(notes.folderId, folder) : undefined,
+        folder ? eq(notes.folderId, folder) : unfiled ? isNull(notes.folderId) : undefined,
         view === 'trash'
           ? isNotNull(notes.deletedAt)
           : and(isNull(notes.deletedAt), eq(notes.archived, view === 'archived')),
@@ -232,7 +244,9 @@ app.get('/api/notes', async (c) => {
     .limit(51)
   const page = rows.slice(0, 50).map(noteResponse)
   const next =
-    rows.length > 50 ? Buffer.from(JSON.stringify(page.at(-1))).toString('base64url') : null
+    rows.length > 50
+      ? Buffer.from(JSON.stringify(cursorSchema.parse(page.at(-1)))).toString('base64url')
+      : null
   return c.json({ notes: page, next })
 })
 app.get('/api/notes/:id', async (c) => {

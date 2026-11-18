@@ -77,6 +77,7 @@ export const folders = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    updatedAt: date('updated_at').notNull().defaultNow(),
   },
   (table) => [
     primaryKey({ columns: [table.owner, table.id] }),

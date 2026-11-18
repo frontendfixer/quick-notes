@@ -215,6 +215,14 @@ integration(
         )
       ).status,
     ).toBe(200)
+    expect((await (await request('/notes?unfiled=true&q=Map', second)).json()).notes).toEqual([])
+    expect((await request('/notes?unfiled=true&folder=' + folder.id, second)).status).toBe(400)
+    expect(await (await request('/folders', second)).json()).toContainEqual({
+      id: folder.id,
+      name: 'Travel',
+      noteCount: 1,
+      updatedAt: expect.any(String),
+    })
     expect(
       (
         await request(
@@ -228,6 +236,16 @@ integration(
     expect((await (await request('/notes?folder=' + folder.id, second)).json()).notes).toHaveLength(
       1,
     )
+    const loose = await request(
+      '/notes/' + crypto.randomUUID(),
+      second,
+      mutation({ ...emptyNote(), title: 'Loose checklist', folderId: null }),
+      'PUT',
+    )
+    expect(loose.status).toBe(200)
+    expect(
+      (await (await request('/notes?unfiled=true&q=Loose+checklist', second)).json()).notes,
+    ).toContainEqual(expect.objectContaining({ title: 'Loose checklist', folderId: null }))
     const backup = await (await request('/export', second)).json()
     expect(backup.folders).toContainEqual({ id: folder.id, name: 'Travel' })
     expect(
