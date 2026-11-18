@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     solid(),
     VitePWA({
-      registerType: 'prompt',
+      injectRegister: false,
       manifest: {
         id: '/',
         name: 'Quick Notes',
@@ -24,11 +24,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
-        // Move older installations off the cache-first shell without reloading open editors.
+        // Keep the cache name stable for installations already using network navigation.
         cacheId: 'quick-notes-network-navigation',
         cleanupOutdatedCaches: false,
-        skipWaiting: true,
-        clientsClaim: false,
+        skipWaiting: false,
+        clientsClaim: true,
         directoryIndex: null,
         navigateFallback: null,
         runtimeCaching: [

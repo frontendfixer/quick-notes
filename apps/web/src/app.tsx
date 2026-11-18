@@ -28,7 +28,7 @@ import {
   Show,
   Suspense,
 } from 'solid-js'
-import { registerSW } from 'virtual:pwa-register'
+import { registerAppWorker } from './pwa-update'
 import {
   emptyNote,
   folderName,
@@ -146,7 +146,8 @@ export default function App() {
   let createTrigger: HTMLButtonElement | undefined
   let folderDialogOrigin: HTMLElement | undefined
   const [signingOut, setSigningOut] = createSignal(false)
-  let updateWorker: (reloadPage?: boolean) => Promise<void>
+  const [restarting, setRestarting] = createSignal(false)
+  let worker: ReturnType<typeof registerAppWorker>
   let releaseWriter: (() => void) | undefined
   let lockOwner: string | undefined
   let requestedLock = 0
@@ -1052,7 +1053,8 @@ export default function App() {
     sessionChanges.onmessage = (event) => {
       if (owner() && event.data?.closed === owner()) closeSession()
     }
-    updateWorker = registerSW({ onNeedRefresh: () => setUpdate(true) })
+    worker = registerAppWorker(() => setUpdate(true))
+    onCleanup(() => worker?.dispose())
     void (async () => {
       try {
         setOwner(await local.owner())
@@ -1069,7 +1071,7 @@ export default function App() {
       await refresh()
     })()
     const visible = () => {
-      if (document.visibilityState === 'visible') void refresh()
+      if (document.visibilityState === 'visible') resume()
       else if (pending.size) void flushEdits()
     }
     const handleShortcut = (event: KeyboardEvent) => {
@@ -1103,6 +1105,7 @@ export default function App() {
     window.addEventListener('popstate', restoreScreen)
     window.addEventListener('keydown', handleShortcut)
     const resume = () => {
+      void worker?.check()
       void refresh()
     }
     const interval = setInterval(() => {
@@ -1176,17 +1179,40 @@ export default function App() {
     </form>
   )
 
+  async function restartToUpdate() {
+    if (!worker || restarting()) return
+    const saveBeforeReload = async () => {
+      do {
+        if (open()?.composing) {
+          notify('Finish typing before restarting to update.')
+          return false
+        }
+        if (!(await flushEdits())) return false
+      } while (pending.size)
+      return true
+    }
+
+    setRestarting(true)
+    try {
+      if (!(await saveBeforeReload())) return
+      await worker.activate()
+      // The editor stays usable while the new worker activates.
+      if ((await saveBeforeReload()) && !pending.size && !open()?.composing)
+        window.location.reload()
+    } catch {
+      notify('The update could not finish. Try restarting to update again.', { error: true })
+    } finally {
+      setRestarting(false)
+    }
+  }
+
   const updateNotice = (mobile = false) => (
     <Show when={update()}>
       <div classList={{ message: true, 'update-message': true, 'mobile-update': mobile }}>
         <RefreshCw size={16} />
         <span>An update is ready.</span>
-        <Button
-          onClick={async () => {
-            if (await flushEdits()) await updateWorker(true)
-          }}
-        >
-          Restart to update
+        <Button disabled={restarting()} onClick={() => void restartToUpdate()}>
+          {restarting() ? 'Updating…' : 'Restart to update'}
         </Button>
       </div>
     </Show>
@@ -1890,6 +1916,12 @@ export default function App() {
                       aria-label="Note title"
                       placeholder="Untitled"
                       maxlength="200"
+                      onCompositionStart={() => {
+                        note.composing = true
+                      }}
+                      onCompositionEnd={() => {
+                        note.composing = false
+                      }}
                       onInput={(event) => {
                         const value = event.currentTarget.value.replace(/[\r\n]+/g, ' ')
                         event.currentTarget.value = value
