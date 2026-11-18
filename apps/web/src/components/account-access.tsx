@@ -3,7 +3,7 @@ import { TextInput } from './text-input'
 import { Alert } from '@kobalte/core/alert'
 import { Button } from '@kobalte/core/button'
 import { ArrowRight, Eye, EyeOff } from 'lucide-solid'
-import { createSignal, Show, type JSX } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../../../../packages/contracts'
 
 export function PasswordField(props: { placeholder?: string; signup?: boolean }) {
@@ -151,7 +151,6 @@ export function AccountAccess(props: {
   onSignIn: (event: SubmitEvent) => void
   onBackToSignIn: () => void
   onSignUp: () => void
-  updateNotice: JSX.Element
 }) {
   return (
     <main class="login">
@@ -212,7 +211,6 @@ export function AccountAccess(props: {
             </Button>
           </Show>
         </Show>
-        {props.updateNotice}
       </section>
     </main>
   )

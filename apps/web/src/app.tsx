@@ -8,7 +8,6 @@ import {
   ChevronDown,
   CircleAlert,
   Download,
-  FileText,
   LockKeyhole,
   Plus,
   RefreshCw,
@@ -1206,18 +1205,6 @@ export default function App() {
     }
   }
 
-  const updateNotice = (mobile = false) => (
-    <Show when={update()}>
-      <div classList={{ message: true, 'update-message': true, 'mobile-update': mobile }}>
-        <RefreshCw size={16} />
-        <span>An update is ready.</span>
-        <Button disabled={restarting()} onClick={() => void restartToUpdate()}>
-          {restarting() ? 'Updating…' : 'Restart to update'}
-        </Button>
-      </div>
-    </Show>
-  )
-
   const saveText = () =>
     activeDraft()?.conflict ? 'Conflict' : activeDraft()?.error ? 'Save rejected' : status()
   const saveLabel = () => {
@@ -1422,7 +1409,7 @@ export default function App() {
     trash: 'Trash is empty',
   }
 
-  return (
+  const app = (
     <div class="app">
       <ActivityToasts editorOpen={showEditor()} />
       <Show
@@ -1440,7 +1427,6 @@ export default function App() {
               setNotice('')
               showWaitlist(true)
             }}
-            updateNotice={updateNotice()}
           />
         }
       >
@@ -1522,7 +1508,6 @@ export default function App() {
               <kbd aria-hidden="true">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} K</kbd>
             </div>
           </Show>
-          {updateNotice(true)}
           <div
             class="collection-panel"
             ref={(node) => {
@@ -1650,9 +1635,13 @@ export default function App() {
                       />
                     }
                   >
-                    <div class="list-empty">
-                      <FileText size={21} />
-                      <p>
+                    <div class="list-empty" aria-busy={!ready() || loadingNotes()}>
+                      <span class="collection-icon" aria-hidden="true">
+                        <Show when={query().trim()} fallback={<span class="note-logo" />}>
+                          <Search size={18} />
+                        </Show>
+                      </span>
+                      <p role="status">
                         {ready() && !loadingNotes()
                           ? query().trim() && !unavailable()
                             ? 'No matching notes'
@@ -1667,6 +1656,7 @@ export default function App() {
                         when={ready() && !loadingNotes() && !query().trim() && view() === 'active'}
                       >
                         <Button class="secondary" onClick={newNote} disabled={!canCreate()}>
+                          <Plus size={16} aria-hidden="true" />
                           Create a note
                         </Button>
                       </Show>
@@ -1718,7 +1708,6 @@ export default function App() {
               {notice()}
             </Alert>
           </Show>
-          {updateNotice()}
           <Show when={!showEditor() || !open()}>
             <Show
               when={!collectionIsEmpty()}
@@ -1996,6 +1985,25 @@ export default function App() {
         />
       </Show>
     </div>
+  )
+
+  return (
+    <>
+      <Show when={update()}>
+        <section class="update-alert" aria-label="App update">
+          <span class="update-alert-icon">
+            <RefreshCw size={18} aria-hidden="true" />
+          </span>
+          <div class="update-alert-copy" role="status">
+            <strong>{restarting() ? 'Updating Quick Notes…' : 'Update ready'}</strong>
+          </div>
+          <Button class="primary" disabled={restarting()} onClick={() => void restartToUpdate()}>
+            Restart to update
+          </Button>
+        </section>
+      </Show>
+      {app}
+    </>
   )
 }
 

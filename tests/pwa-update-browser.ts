@@ -65,6 +65,7 @@ try {
       })
       const page = await context.newPage()
       const other = await context.newPage()
+      await other.setViewportSize({ width: 1280, height: 800 })
       page.setDefaultTimeout(15000)
       other.setDefaultTimeout(15000)
       const base = server.url.href
@@ -74,8 +75,8 @@ try {
         tab.getByRole('button', { name: 'Restart to update', exact: true })
       await page.goto(base)
       await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller))
-      await page.getByRole('button', { name: 'Create menu', exact: true }).click()
-      await page.getByRole('menuitem', { name: 'Create Note', exact: true }).click()
+      const empty = page.locator('.list-empty').filter({ hasText: 'No notes yet' })
+      await empty.getByRole('button', { name: 'Create a note', exact: true }).click()
       await page.getByRole('textbox', { name: 'Note title' }).fill('Release draft')
       const body = page.getByRole('textbox', { name: 'Note content' })
       await body.fill('Before deployment')
@@ -87,6 +88,8 @@ try {
       deployed = 'B'
       await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
       await restart(page).waitFor()
+      assert.equal(await restart(page).count(), 1)
+      assert.equal(await page.getByRole('region', { name: 'App update' }).count(), 1)
       assert.equal(await version(page), 'A')
       assert.equal(await body.textContent(), 'Before deployment')
 
@@ -118,6 +121,8 @@ try {
         'Release draft',
       )
       await restart(other).waitFor()
+      assert.equal(await restart(other).count(), 1)
+      assert.equal(await other.getByRole('region', { name: 'App update' }).count(), 1)
       assert.equal(await version(other), 'A')
       await restart(other).click()
       await other.waitForFunction(

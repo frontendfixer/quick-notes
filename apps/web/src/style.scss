@@ -115,16 +115,16 @@ select {
 }
 .app {
   display: flex;
-  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
 }
 .sidebar {
   position: sticky;
-  top: 0;
+  top: var(--app-top, 0px);
   display: flex;
   flex-direction: column;
   flex: 0 0 305px;
   min-width: 0;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
   padding: 21px 16px 13px;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
@@ -358,14 +358,26 @@ select {
 }
 .list-empty {
   display: grid;
-  justify-items: start;
-  gap: 9px;
-  padding: 15px 10px;
-  color: var(--muted);
-  font-size: 0.85rem;
+  justify-items: center;
+  gap: 10px;
+  margin-block: 8px;
+  padding: 24px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--input);
+  text-align: center;
 }
 .list-empty p {
   margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+.list-empty button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
 }
 .offline-notice,
 .load-more {
@@ -442,7 +454,7 @@ select {
 .note-topbar {
   position: sticky;
   z-index: 3;
-  top: 0;
+  top: var(--app-top, 0px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -757,15 +769,11 @@ select {
   color: var(--muted);
   font-size: 0.84rem;
 }
-.mobile-update {
-  display: none;
-}
 .workspace > .message,
 .workspace > .reauth {
   margin: 10px 14px 0;
 }
-.message,
-.update-message {
+.message {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -774,8 +782,46 @@ select {
   color: var(--accent);
   font-size: 0.85rem;
 }
-.update-message button {
+#root {
+  --update-alert-height: calc(64px + env(safe-area-inset-top));
+}
+.update-alert + .app {
+  --app-top: var(--update-alert-height);
+  --app-height: calc(100dvh - var(--app-top));
+}
+.update-alert {
+  position: sticky;
+  z-index: 7;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: var(--update-alert-height);
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--input);
+  font-size: 0.88rem;
+}
+.update-alert-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--accent-soft);
   color: var(--accent);
+}
+.update-alert .primary {
+  flex: none;
+  min-height: 40px;
+  padding-inline: 12px;
+}
+@media (max-width: 350px) {
+  .update-alert-icon {
+    display: none;
+  }
 }
 .reauth {
   display: flex;
@@ -818,7 +864,7 @@ select {
   display: grid;
   place-items: center;
   width: 100%;
-  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
   padding: 24px;
   background: var(--sidebar);
 }
@@ -865,13 +911,9 @@ select {
 @media (max-width: 900px) {
   .sidebar {
     flex-basis: 100%;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
     padding-inline: 16px;
     border-right: 0;
-  }
-  .mobile-update {
-    display: flex;
-    margin-bottom: 10px;
   }
   .mobile-hidden {
     display: none;
@@ -1352,7 +1394,7 @@ select {
   .sidebar {
     position: static;
     flex-basis: 100%;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
     padding: 19px 14px calc(25px + env(safe-area-inset-bottom));
   }
 
@@ -1693,7 +1735,7 @@ select {
 @media (max-width: 900px) {
   .sidebar-header {
     position: sticky;
-    top: 0;
+    top: var(--app-top, 0px);
     background: var(--sidebar);
     box-shadow: 0 0 0 7px var(--sidebar);
   }
