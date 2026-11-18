@@ -15,6 +15,15 @@ app.get('/healthz', async (c) => {
 
 const root = './apps/web/dist'
 app.get(
+  '/sw.js',
+  async (c, next) => {
+    c.header('Cache-Control', 'no-store')
+    c.header('Cloudflare-CDN-Cache-Control', 'no-store')
+    await next()
+  },
+  serveStatic({ root }),
+)
+app.get(
   '/assets/*',
   async (c, next) => {
     c.header('Cache-Control', 'public, max-age=31536000, immutable')
