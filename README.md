@@ -30,7 +30,7 @@ For password recovery, run `bun run account:reset-password you@example.com` and 
 
 ## Approve signup requests
 
-The sign-in page links to **Request access**. The user chooses a password and receives a request ID. Confirm that the applicant sent you the matching request ID through a channel you trust before approving it. The app does not send verification or approval email.
+The sign-in page links to **Sign up**. The user chooses a password and receives a request ID. Confirm that the applicant sent you the matching request ID through a channel you trust before approving it. The app does not send verification or approval email.
 
 Run these statements in the Quick Notes PostgreSQL database:
 

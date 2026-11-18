@@ -24,7 +24,21 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,webmanifest}'],
-        navigateFallbackDenylist: [/^\/api(?:\/|$)/],
+        // Move older installations off the cache-first shell without reloading open editors.
+        cacheId: 'quick-notes-network-navigation',
+        cleanupOutdatedCaches: false,
+        skipWaiting: true,
+        clientsClaim: false,
+        directoryIndex: null,
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url, sameOrigin }) =>
+              request.mode === 'navigate' && sameOrigin && url.pathname === '/',
+            handler: 'NetworkOnly',
+            options: { precacheFallback: { fallbackURL: '/index.html' } },
+          },
+        ],
       },
     }),
   ],

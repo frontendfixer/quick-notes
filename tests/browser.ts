@@ -301,7 +301,8 @@ try {
   console.log('Folders support create, rename, note moves, and immediate Trash on delete')
   const applicant = await browser.newPage()
   await applicant.goto(origin)
-  await applicant.getByRole('button', { name: 'Request access' }).click()
+  await applicant.getByRole('button', { name: 'Sign up' }).click()
+  await applicant.getByRole('heading', { name: 'Sign up', exact: true }).waitFor()
   await applicant.getByLabel('Email').fill('waitlist-review@example.test')
   await applicant.getByLabel('Password', { exact: true }).fill(password)
   await applicant.getByRole('button', { name: 'Join waitlist' }).click()
@@ -312,6 +313,8 @@ try {
   )
   await applicant.getByRole('button', { name: 'Back to sign in' }).click()
   await applicant.getByRole('heading', { name: 'Sign in' }).waitFor()
+  await applicant.goto(origin + '/?signup=1')
+  await applicant.getByRole('heading', { name: 'Sign up', exact: true }).waitFor()
   await applicant.close()
   assert.deepEqual(errors, [])
   console.log(

@@ -161,7 +161,7 @@ function WaitlistForm(props: { signIn: () => void }) {
         when={requestId()}
         fallback={
           <>
-            <h1>Request access</h1>
+            <h1>Sign up</h1>
             <p class="login-description">An approval is required before you can sign in.</p>
             <form onSubmit={submit}>
               <label>
@@ -219,7 +219,9 @@ function WaitlistForm(props: { signIn: () => void }) {
 }
 
 function App() {
-  const [joiningWaitlist, setJoiningWaitlist] = createSignal(false)
+  const [joiningWaitlist, setJoiningWaitlist] = createSignal(
+    new URLSearchParams(location.search).get('signup') === '1',
+  )
   const [owner, setOwner] = createSignal<string>()
   const [ready, setReady] = createSignal(false)
   const [authorized, setAuthorized] = createSignal(false)
@@ -1161,7 +1163,7 @@ function App() {
         when={owner()}
         fallback={
           <main class="login">
-            <section class="login-card" aria-label="Quick Notes sign-in">
+            <section class="login-card" aria-label="Quick Notes account access">
               <div class="brand">
                 <span class="brand-mark">
                   <NotebookPen size={19} />
@@ -1205,10 +1207,11 @@ function App() {
                       setJoiningWaitlist(true)
                     }}
                   >
-                    Request access
+                    Sign up
                   </button>
                 </Show>
               </Show>
+              {updateNotice()}
               <Show when={notice()}>
                 <p class="inline-error" role="alert">
                   {notice()}
