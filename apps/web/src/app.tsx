@@ -1171,6 +1171,8 @@ export default function App() {
       }
       if (
         (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
         event.key.toLowerCase() === 'k' &&
         searchInput?.isConnected
       ) {

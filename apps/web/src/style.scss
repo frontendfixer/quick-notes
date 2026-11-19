@@ -2006,3 +2006,42 @@ select {
     animation: none;
   }
 }
+
+.editor-context-menu {
+  z-index: 14;
+  min-width: min(220px, calc(100vw - 16px));
+  max-height: min(var(--kb-popper-content-available-height, 100dvh), calc(100dvh - 16px));
+  overflow-y: auto;
+
+  .ui-menu-item {
+    min-height: 32px;
+  }
+
+  .ui-menu-item[data-active] {
+    color: var(--accent);
+  }
+
+  kbd {
+    margin-inline-start: auto;
+    padding-inline-start: 12px;
+    font: inherit;
+    font-size: 0.75rem;
+    opacity: 0.72;
+  }
+}
+
+.editor-context-separator {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.editor-context-history {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+
+  .ui-menu-item {
+    justify-content: center;
+  }
+}

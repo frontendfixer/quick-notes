@@ -9,7 +9,10 @@ try {
   // Exercise the app and its autosave flow without needing a PostgreSQL instance.
   const page = await browser.newPage({
     serviceWorkers: 'block',
-    viewport: { width: 390, height: 844 },
+    viewport: process.env.EDITOR_SCREENSHOT
+      ? { width: 1000, height: 740 }
+      : { width: 390, height: 844 },
+    permissions: ['clipboard-read', 'clipboard-write'],
   })
   page.setDefaultTimeout(8000)
   const notes = new Map<string, Note>()
@@ -82,9 +85,61 @@ try {
   await body.press('ArrowUp')
   await body.press('Home')
   await body.press('Shift+End')
-  for (const mark of ['Bold', 'Italic', 'Underline', 'Strikethrough', 'Highlight'])
-    await format(mark)
-  await format('Link')
+  await body.getByText('Read the trail report', { exact: true }).click({ button: 'right' })
+  const editMenu = page.getByRole('menu', { name: 'Edit note' })
+  assert.equal(
+    await editMenu.getByRole('menuitem', { name: 'Copy', exact: true }).isEnabled(),
+    true,
+  )
+  const menuItem = (name: string) => editMenu.getByRole('menuitem', { name, exact: true })
+  const report = body.getByText('Read the trail report', { exact: true })
+  const rightClickReport = () => report.click({ button: 'right' })
+  const undo = await menuItem('Undo').boundingBox()
+  const redo = await menuItem('Redo').boundingBox()
+  assert.ok(undo && redo && undo.y === redo.y && undo.x < redo.x)
+  assert.equal(await menuItem('Redo').isDisabled(), true)
+  if (process.env.EDITOR_SCREENSHOT) {
+    await page.screenshot({ path: process.env.EDITOR_SCREENSHOT, animations: 'disabled' })
+    await page.setViewportSize({ width: 390, height: 844 })
+  }
+  await menuItem('Copy').click()
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Read the trail report')
+  await rightClickReport()
+  await menuItem('Cut').click()
+  await report.waitFor({ state: 'detached' })
+  await body.locator('p').first().click({ button: 'right' })
+  await menuItem('Paste').click()
+  await report.waitFor()
+  await body.press('Home')
+  await body.press('Shift+End')
+  await rightClickReport()
+  await menuItem('Bold').click()
+  await rightClickReport()
+  await menuItem('Undo').click()
+  assert.equal(await body.locator('strong').count(), 0)
+  await rightClickReport()
+  await menuItem('Redo').click()
+  assert.equal(await body.locator('strong').textContent(), 'Read the trail report')
+  await body.press('ControlOrMeta+i')
+  for (const mark of ['Underline', 'Strikethrough', 'Highlight']) await format(mark)
+  const touch = await page.context().newCDPSession(page)
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true })
+  const reportBox = await report.boundingBox()
+  assert.ok(reportBox)
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: reportBox.x + 6, y: reportBox.y + 6 }],
+  })
+  await editMenu.waitFor()
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  if (process.env.EDITOR_MOBILE_SCREENSHOT) {
+    await page.screenshot({ path: process.env.EDITOR_MOBILE_SCREENSHOT, animations: 'disabled' })
+  }
+  await page.keyboard.press('Escape')
+  await editMenu.waitFor({ state: 'hidden' })
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: false })
+  await touch.detach()
+  await body.press('ControlOrMeta+Shift+k')
   const url = page.getByRole('textbox', { name: 'Link URL' })
   await url.fill('https://')
   await button('Save link').click()
@@ -96,7 +151,8 @@ try {
     assert.equal(await body.locator(tag).textContent(), 'Read the trail report')
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
   await page.waitForFunction(() => document.activeElement?.classList.contains('tiptap'))
-  await body.locator('p').last().click()
+  await body.press('ControlOrMeta+End')
+  if (await body.locator('p').last().textContent()) await body.press('Enter')
   await format('Quote')
   assert.equal(await trail.count(), 1, "await format('Quote')")
   await body.pressSequentially('Keep to the marked path.')
@@ -236,7 +292,10 @@ ul[data-type="taskList"] > li { list-style: none; display: flex; gap: .5rem; }
   await page.waitForFunction(
     () => document.querySelector<HTMLInputElement>('.note-title')?.value === 'Updated journal',
   )
-  await button('Back to notes').click()
+  await body.press('ControlOrMeta+k')
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-label') === 'Search notes',
+  )
   const trashed = {
     ...journal,
     id: crypto.randomUUID(),
