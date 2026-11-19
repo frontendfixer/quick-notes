@@ -11,6 +11,8 @@ export type Draft = {
   sent?: { generation: string; mutation: Mutation }
   conflict?: { current: Note | null }
   error?: string
+  purge?: true
+  purgeRevision?: number
 }
 
 interface Local extends DBSchema {
@@ -67,6 +69,23 @@ export const local = {
     )
     await tx.done
   },
+  async touchSnapshot(owner: string, note: Note) {
+    const tx = (await database()).transaction('snapshots', 'readwrite')
+    const key: [string, string] = [owner, note.id]
+    const entry = await tx.store.get(key)
+    if (entry) await tx.store.put({ ...entry, accessed: Date.now() }, key)
+    await tx.done
+  },
+  async reconcileSnapshot(owner: string, previous: Note, current: Note | null) {
+    const tx = (await database()).transaction('snapshots', 'readwrite')
+    const key: [string, string] = [owner, previous.id]
+    const entry = await tx.store.get(key)
+    if (entry?.note.revision === previous.revision) {
+      if (current) await tx.store.put({ ...entry, note: current }, key)
+      else await tx.store.delete(key)
+    }
+    await tx.done
+  },
   async dropSnapshot(owner: string, id: string) {
     await (await database()).delete('snapshots', [owner, id])
   },
@@ -99,6 +118,19 @@ export const local = {
     await tx.done
     return draft
   },
+  async finishPurge(draft: Draft) {
+    const tx = (await database()).transaction(['drafts', 'snapshots'], 'readwrite', {
+      durability: 'strict',
+    })
+    const key: [string, string] = [draft.owner, draft.id]
+    const drafts = tx.objectStore('drafts')
+    const current = await drafts.get(key)
+    if (current?.purge && current.generation === draft.generation) {
+      await drafts.delete(key)
+      await tx.objectStore('snapshots').delete(key)
+    }
+    await tx.done
+  },
   async acknowledge(draft: Draft, note: Note, keep?: string) {
     const tx = (await database()).transaction(['drafts', 'snapshots'], 'readwrite', {
       durability: 'strict',
@@ -112,8 +144,17 @@ export const local = {
       if (!previous || previous.note.revision <= note.revision) {
         await snapshots.put({ owner: draft.owner, note, accessed: Date.now() }, key)
       }
-      if (current.generation === draft.sent?.generation) await drafts.delete(key)
-      else await drafts.put({ ...current, base: note.revision, sent: undefined }, key)
+      if (!current.purge && current.generation === draft.sent?.generation) await drafts.delete(key)
+      else
+        await drafts.put(
+          {
+            ...current,
+            base: note.revision,
+            sent: undefined,
+            purgeRevision: current.purge && note.deleted ? note.revision : undefined,
+          },
+          key,
+        )
     }
     const snapshots = tx.objectStore('snapshots')
     const entries = await snapshots.index('owner').getAll(draft.owner)

@@ -38,6 +38,43 @@ beforeAll(async () => {
 })
 
 integration(
+  'reconciliation reports revisions across views and hides foreign and purged notes',
+  async () => {
+    const id = crypto.randomUUID()
+    const missing = crypto.randomUUID()
+    const path = '/notes/' + id
+    const reconcile = '/notes/reconcile?ids=' + [id, missing].join(',')
+    expect((await request(reconcile)).status).toBe(401)
+    expect((await request('/notes/reconcile?ids=invalid', first)).status).toBe(400)
+    const fields = { ...emptyNote(), title: 'Reconciliation note' }
+    for (const [index, state] of (['active', 'archived', 'trash'] as const).entries()) {
+      const response = await request(
+        path,
+        first,
+        {
+          mutationId: crypto.randomUUID(),
+          expectedRevision: index || null,
+          fields: { ...fields, archived: index > 0, deleted: state === 'trash' },
+        },
+        'PUT',
+      )
+      expect(response.status).toBe(200)
+      expect((await (await request(reconcile, first)).json()).notes).toEqual([
+        { id, revision: index + 1, state },
+      ])
+    }
+    expect((await (await request(reconcile, second)).json()).notes).toEqual([])
+    expect((await request(path, first, undefined, 'DELETE', { 'If-Match': '"3"' })).status).toBe(
+      204,
+    )
+    expect((await request(path, first, undefined, 'DELETE', { 'If-Match': '"3"' })).status).toBe(
+      204,
+    )
+    expect((await (await request(reconcile, first)).json()).notes).toEqual([])
+  },
+)
+
+integration(
   'private sessions, owner scoping, immutable retry receipts and concurrent writes',
   async () => {
     const id = crypto.randomUUID()

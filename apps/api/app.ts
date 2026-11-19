@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto'
-import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { secureHeaders } from 'hono/secure-headers'
 import { z } from 'zod'
 import {
   mutation,
+  reconciliationLimit,
+  type View,
   plainText,
   folderName,
   MIN_PASSWORD_LENGTH,
@@ -248,6 +250,32 @@ app.get('/api/notes', async (c) => {
       ? Buffer.from(JSON.stringify(cursorSchema.parse(page.at(-1)))).toString('base64url')
       : null
   return c.json({ notes: page, next })
+})
+app.get('/api/notes/reconcile', async (c) => {
+  const ids = z
+    .array(z.uuid())
+    .min(1)
+    .max(reconciliationLimit)
+    .safeParse(c.req.query('ids')?.split(','))
+  if (!ids.success) return c.json({ error: 'Invalid reconciliation IDs' }, 400)
+  const owner = c.get('owner')
+  const rows = await db
+    .select({
+      id: notes.id,
+      revision: notes.revision,
+      deletedAt: notes.deletedAt,
+      archived: notes.archived,
+    })
+    .from(notes)
+    .where(and(eq(notes.owner, owner), inArray(notes.id, ids.data)))
+  return c.json({
+    owner,
+    notes: rows.map(({ id, revision, deletedAt, archived }) => ({
+      id,
+      revision,
+      state: (deletedAt ? 'trash' : archived ? 'archived' : 'active') satisfies View,
+    })),
+  })
 })
 app.get('/api/notes/:id', async (c) => {
   const id = z.uuid().safeParse(c.req.param('id'))

@@ -6,6 +6,7 @@
       "name": "quick-notes",
       "dependencies": {
         "@kobalte/core": "0.13.14",
+        "@tanstack/solid-query": "5.108.1",
         "@tiptap/core": "3.34.0",
         "@tiptap/extension-highlight": "3.34.0",
         "@tiptap/extension-image": "3.34.0",
@@ -569,6 +570,10 @@
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
     "@swc/helpers": ["@swc/helpers@0.5.24", "", {}, "sha512-6tcXo4kA8HgGO7AVmawB57RYi/piBPYVHVcO6dXjX+SZw8GoHmi262sp4v2Ha2kNP9Cx84qei27yT+fjS1lxgg=="],
+
+    "@tanstack/query-core": ["@tanstack/query-core@5.108.1", "", {}, "sha512-GBX6Xsc9E+9eVLLxuM7orQNbssQjpruOCbocBYwT78MjxOWT5I+CWdvEo0N+UM6+oCZEKxuSud1oFLvE3OEmIg=="],
+
+    "@tanstack/solid-query": ["@tanstack/solid-query@5.108.1", "", { "dependencies": { "@tanstack/query-core": "5.108.1" }, "peerDependencies": { "solid-js": "^1.6.0" } }, "sha512-DxcHhJu5fN9nzU4NsZtRB1ytwU8W3KGi54kqLcouCPxPolIyuBe2tEYbExQEHQOMDPtE6YCuNKx3MCxp/r4D+A=="],
 
     "@tiptap/core": ["@tiptap/core@3.34.0", "", { "peerDependencies": { "@tiptap/pm": "3.34.0" } }, "sha512-PwpE5MAXt586AxIO5bW2RyJ3OUXdPfG5M1M5v/LIMCkDwIgRKegx8uERlABoI6575mWqaH/P6Xm+tequJ5UUnw=="],
 

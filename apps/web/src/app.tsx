@@ -1,3 +1,4 @@
+import { CancelledError, QueryClient } from '@tanstack/solid-query'
 import * as AlertDialog from '@kobalte/core/alert-dialog'
 import { TextField } from '@kobalte/core/text-field'
 import { Collapsible } from '@kobalte/core/collapsible'
@@ -42,6 +43,7 @@ import {
   type Folder,
 } from '../../../packages/contracts'
 import { local, type Draft } from './storage'
+import { reconcileNotes } from './reconciliation'
 import { readScreen, writeScreen } from './location'
 import { ActivityToasts, clearNotifications, notify } from './components/activity-toasts'
 import { AccountAccess, PasswordField } from './components/account-access'
@@ -97,6 +99,9 @@ export default function App() {
   const [joiningWaitlist, setJoiningWaitlist] = createSignal(
     new URLSearchParams(location.search).get('signup') === '1',
   )
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { networkMode: 'always', retry: false } },
+  })
   const [owner, setOwner] = createSignal<string>()
   const [ready, setReady] = createSignal(false)
   const [authorized, setAuthorized] = createSignal(false)
@@ -133,7 +138,11 @@ export default function App() {
   let sidebar: HTMLElement | undefined
   let libraryScroll = 0
   let notesPanel: HTMLDivElement | undefined
-  let listRequests = 0
+  const [loadingMore, setLoadingMore] = createSignal(false)
+  let moreRequest: number | undefined
+  const [displayedList, setDisplayedList] = createSignal<string>()
+  let listInFlight: string | undefined
+  let refreshAfterList = false
   const [showEditor, setShowEditor] = createSignal(false)
   const [status, setStatus] = createSignal('')
   const [notice, setNotice] = createSignal('')
@@ -142,7 +151,7 @@ export default function App() {
   let updateOrigin: HTMLElement | null = null
   let updateReminder: HTMLButtonElement | undefined
   const [signingIn, setSigningIn] = createSignal(false)
-  const [opening, setOpening] = createSignal(false)
+  const [opening, setOpening] = createSignal<false | 'local' | 'remote'>(false)
   const [creating, setCreating] = createSignal(false)
   const [confirmSignOut, setConfirmSignOut] = createSignal(false)
   const [noteToTrash, setNoteToTrash] = createSignal<string>()
@@ -162,9 +171,12 @@ export default function App() {
   let folderEpoch = 0
   let draftEpoch = 0
   let syncBusy = false
+  let reconciliationRequested = false
   const [refreshing, setRefreshing] = createSignal(false)
+  const [manualRefresh, setManualRefresh] = createSignal(false)
   const [deletingNote, setDeletingNote] = createSignal<string>()
   let refreshAgain = false
+  let refreshAgainManually = false
   let queue: Promise<unknown> = Promise.resolve()
   let localTimer: ReturnType<typeof setTimeout> | undefined
   let uploadTimer: ReturnType<typeof setTimeout> | undefined
@@ -183,7 +195,12 @@ export default function App() {
   const draftFor = (id: string) => draftById().get(id)
   const activeDraft = () => draftFor(open()?.id ?? '')
   const canEdit = () =>
-    writable() && !fields().deleted && !signingOut() && !creating() && !folderBusy()
+    writable() &&
+    !activeDraft()?.purge &&
+    !fields().deleted &&
+    !signingOut() &&
+    !creating() &&
+    !folderBusy()
 
   function acquireWriter(id: string) {
     if (lockOwner === id) return
@@ -240,8 +257,7 @@ export default function App() {
       setFolder(id)
       setView(tab)
       setQuery('')
-      setNotes([])
-      setNext(null)
+      clearList()
       setShowEditor(false)
     })
     if (historyMode !== 'none') {
@@ -252,14 +268,18 @@ export default function App() {
 
   async function loadFolders(id: string, cached = false) {
     const request = ++folderEpoch
-    const items: Folder[] = cached
+    const items = cached
       ? await local.folders(id)
-      : await fetch('/api/folders', { signal: AbortSignal.timeout(5000) }).then(
-          async (response) => {
+      : await queryClient.query({
+          queryKey: ['folders', id],
+          queryFn: async ({ signal }) => {
+            const response = await fetch('/api/folders', {
+              signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+            })
             if (!response.ok) throw new Error('Could not load folders')
             return folderResponse.array().parse(await response.json())
           },
-        )
+        })
     if (owner() !== id || request !== folderEpoch) return
     setFolders(items)
     if (!cached && folder() && !items.some((item) => item.id === folder())) {
@@ -319,8 +339,12 @@ export default function App() {
       )
       if (saved) items.push({ ...saved.data, noteCount: existing ? existing.noteCount : 0 })
       items.sort((a, b) => a.name.localeCompare(b.name))
-      setFolders(items)
       ++folderEpoch
+      await queryClient.cancelQueries({ queryKey: ['folders', account] })
+      if (owner() !== account) return
+      queryClient.setQueryData(['folders', account], items)
+      void queryClient.invalidateQueries({ queryKey: ['notes', account], refetchType: 'none' })
+      setFolders(items)
       void local.cacheFolders(account, items).catch(() => undefined)
       if (!event && existing) {
         await local.dropFolderSnapshots(account, existing.id).catch(() => undefined)
@@ -351,51 +375,153 @@ export default function App() {
   const canManageFolders = () =>
     authorized() && writable() && !unavailable() && !folderBusy() && !signingOut()
 
-  async function list(append = false) {
-    const id = owner()
-    if (!id) return
-    const request = ++listEpoch
-    const tab = view()
-    if (unavailable() || mustSignIn()) {
-      const snapshots = await local.snapshots(id)
-      const entries = new Map(snapshots.map((note) => [note.id, note]))
-      for (const draft of drafts())
-        entries.set(draft.id, {
-          ...draft.fields,
-          id: draft.id,
-          revision: draft.base ?? 0,
-          updatedAt: draft.changedAt,
-        })
-      if (request === listEpoch && owner() === id) {
-        const offline = [...entries.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        setNotes(
-          offline.filter(inView).map((note) => ({
-            ...note,
-            preview: plainText(note.document).slice(0, 180),
-          })),
-        )
-        setNext(null)
-      }
-      return
-    }
-    if (!authorized()) return
-    const params = new URLSearchParams({ view: tab, sort: sort(), q: query() })
+  type NotePage = { notes: Summary[]; next: string | null }
+  type CachedList = NotePage & { pages: number }
+
+  function clearList() {
+    ++listEpoch
+    setDisplayedList(undefined)
+    listInFlight = undefined
+    refreshAfterList = false
+    moreRequest = undefined
+    setLoadingNotes(false)
+    setLoadingMore(false)
+    setNotes([])
+    setNext(null)
+  }
+
+  function listParams() {
+    const params = new URLSearchParams({ view: view(), sort: sort(), q: query() })
     const currentFolder = folder()
     if (currentFolder) params.set('folder', currentFolder)
-    else if (tab === 'active') params.set('unfiled', 'true')
-    if (append && next()) params.set('cursor', next()!)
-    const response = await fetch('/api/notes?' + params, { signal: AbortSignal.timeout(5000) })
-    if (request !== listEpoch || owner() !== id) return
-    if (response.status === 401) return expire()
+    else if (view() === 'active') params.set('unfiled', 'true')
+    return params
+  }
+
+  class SessionExpired extends Error {}
+
+  async function fetchNotePage(
+    params: URLSearchParams,
+    cursor: string | null,
+    signal: AbortSignal,
+  ) {
+    const page = new URLSearchParams(params)
+    if (cursor) page.set('cursor', cursor)
+    const response = await fetch('/api/notes?' + page, {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
+    })
+    if (response.status === 401) throw new SessionExpired()
     if (!response.ok) throw new Error('Could not load notes')
-    const page: { notes: Summary[]; next: string | null } = await response.json()
-    if (request !== listEpoch || owner() !== id) return
-    setNotes((previous) =>
-      append
-        ? [...new Map([...previous, ...page.notes].map((note) => [note.id, note])).values()]
-        : page.notes,
-    )
-    setNext(page.next)
+    return (await response.json()) as NotePage
+  }
+
+  async function safeList(append = false, foreground = true) {
+    const id = owner()
+    if (!id || signingOut()) return
+    const params = listParams()
+    const identity = params.toString()
+    const key = ['notes', id, identity] as const
+    const cached = queryClient.getQueryData<CachedList>(key)
+    const online = authorized() && !unavailable()
+    const cursor = append && displayedList() === identity ? next() : null
+    if ((append && !cursor) || (moreRequest !== undefined && displayedList() === identity)) return
+    if (!foreground && listInFlight === identity) return
+    const request = ++listEpoch
+    listInFlight = identity
+    const current = () =>
+      request === listEpoch && owner() === id && listParams().toString() === identity
+    const show = (page: NotePage) => {
+      batch(() => {
+        setDisplayedList(identity)
+        setNotes(page.notes)
+        setNext(page.next)
+      })
+    }
+    if (append) {
+      moreRequest = request
+      setLoadingMore(true)
+    } else {
+      moreRequest = undefined
+      setLoadingMore(false)
+      if (online && cached && displayedList() !== identity) show(cached)
+      setLoadingNotes(foreground && displayedList() === undefined)
+    }
+    try {
+      if (!online) {
+        const snapshots = await local.snapshots(id)
+        if (!current()) return
+        const entries = new Map(snapshots.map((note) => [note.id, note]))
+        for (const draft of drafts()) {
+          entries.set(draft.id, {
+            ...draft.fields,
+            id: draft.id,
+            revision: draft.base ?? 0,
+            updatedAt: draft.changedAt,
+          })
+        }
+        show({
+          notes: [...entries.values()]
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+            .filter(inView)
+            .map((note) => ({ ...note, preview: plainText(note.document).slice(0, 180) })),
+          next: null,
+        })
+        return
+      }
+      if (cursor) await queryClient.cancelQueries({ queryKey: key, exact: true })
+      const data = cursor
+        ? await queryClient.query({
+            queryKey: ['note-page', id, identity, cursor],
+            gcTime: 0,
+            queryFn: async ({ signal }): Promise<CachedList> => {
+              const page = await fetchNotePage(params, cursor, signal)
+              const combined = new Map((cached?.notes ?? notes()).map((note) => [note.id, note]))
+              for (const note of page.notes) combined.set(note.id, note)
+              return {
+                notes: [...combined.values()],
+                next: page.next,
+                pages: (cached?.pages ?? 1) + 1,
+              }
+            },
+          })
+        : await queryClient.query({
+            queryKey: key,
+            queryFn: async ({ signal }): Promise<CachedList> => {
+              const entries = new Map<string, Summary>()
+              const pageCount = cached?.pages ?? 1
+              let next: string | null = null
+              let pages = 0
+              do {
+                const page = await fetchNotePage(params, next, signal)
+                for (const note of page.notes) entries.set(note.id, note)
+                next = page.next
+              } while (++pages < pageCount && next)
+              return { notes: [...entries.values()], next, pages }
+            },
+          })
+      if (!current()) return
+      if (cursor) queryClient.setQueryData(key, data)
+      show(data)
+      if (notice() === 'Could not refresh the notes list.') setNotice('')
+    } catch (error) {
+      if (!current() || error instanceof CancelledError) return
+      if (error instanceof SessionExpired) expire()
+      else if (append || (foreground && (!cached || manualRefresh())))
+        setNotice('Could not refresh the notes list.')
+    } finally {
+      if (moreRequest === request) {
+        moreRequest = undefined
+        setLoadingMore(false)
+      }
+      if (request === listEpoch) {
+        listInFlight = undefined
+        setLoadingNotes(false)
+        if (refreshAfterList) {
+          refreshAfterList = false
+          void safeList(false, false)
+        }
+      }
+    }
   }
 
   function expire() {
@@ -428,8 +554,7 @@ export default function App() {
         batch(() => {
           setView(targetView)
           setFolder(targetFolder)
-          setNotes([])
-          setNext(null)
+          clearList()
         })
         void safeList()
       }
@@ -441,7 +566,7 @@ export default function App() {
     }
     if (!showEditor()) libraryScroll = notesPanel?.scrollTop ?? 0
     const account = owner()
-    if (!account) return
+    if (!account || draftFor(id)?.purge) return
     if (open()?.id === id) {
       ++selection
       setOpening(false)
@@ -451,30 +576,34 @@ export default function App() {
       return
     }
     const request = ++selection
-    setOpening(true)
+    setOpening('local')
+    let hasLocal = false
     setNotice('')
     try {
       if (!(await flushEdits())) return
       if (request !== selection || owner() !== account) return
       const draft = draftFor(id)
+      if (draft?.purge) return
       let cached = await local.snapshot(account, id)
       if (request !== selection || owner() !== account) return
       if (draft || cached) {
+        hasLocal = true
         const initial = draft?.fields ?? cached!
         showNote(account, draft ? draft.base : cached!.revision, initial)
-        if (cached) void local.cache(account, cached, id).catch(storageError)
+        if (cached) void local.touchSnapshot(account, cached).catch(storageError)
       }
       if (!authorized() || unavailable()) {
         if (!draft && !cached) setNotice('This note is unavailable offline.')
         return
       }
+      if (!hasLocal) setOpening('remote')
       const edit = editEpoch
       const response = await fetch('/api/notes/' + id, {
         headers: cached ? { 'If-None-Match': '"' + cached.revision + '"' } : {},
         signal: AbortSignal.timeout(5000),
       })
       if (response.status === 401) return expire()
-      if (response.status === 304) return
+      if (response.status === 304 || (response.status === 404 && draft)) return
       if (
         response.status === 404 &&
         !draft &&
@@ -516,7 +645,8 @@ export default function App() {
         }
       }
     } catch {
-      if (request === selection) setNotice('Could not open note. Try again when connected.')
+      if (request === selection && !hasLocal)
+        setNotice('Could not open note. Try again when connected.')
     } finally {
       if (request === selection) setOpening(false)
     }
@@ -528,55 +658,69 @@ export default function App() {
       setShowEditor(false)
     }
     if (readScreen().note === id) updateScreen('replace')
+    ++listEpoch
+    listInFlight = undefined
+    setLoadingNotes(false)
+    void queryClient.cancelQueries({ queryKey: ['notes', owner()] })
     setNotes((previous) => previous.filter((note) => note.id !== id))
+    queryClient.setQueriesData<CachedList>(
+      { queryKey: ['notes', owner()] },
+      (data) => data && { ...data, notes: data.notes.filter((note) => note.id !== id) },
+    )
   }
 
   function canDeletePermanently() {
     const current = open()
+    const draft = activeDraft()
     return Boolean(
-      current?.base &&
+      current &&
       fields().deleted &&
       writable() &&
-      authorized() &&
-      !unavailable() &&
       !signingOut() &&
       !folderBusy() &&
       !deletingNote() &&
-      !activeDraft() &&
-      status() === 'Saved to server' &&
-      !pending.has(current.id),
+      !draft?.purge &&
+      !draft?.conflict &&
+      status() !== 'Editing' &&
+      !pending.has(current.id) &&
+      (draft || current.base !== null),
     )
   }
 
   async function deletePermanently() {
     const current = open()
     if (!current || !canDeletePermanently()) return
+    const deletedFields = fields()
     setDeletingNote(current.id)
     try {
-      const response = await fetch('/api/notes/' + current.id, {
-        method: 'DELETE',
-        headers: { 'If-Match': '"' + current.base + '"' },
-        signal: AbortSignal.timeout(5000),
+      await ordered(async () => {
+        await local.change(current.owner, current.id, (previous) => {
+          if ((previous?.base ?? current.base) === null && !previous?.sent) return undefined
+          return {
+            owner: current.owner,
+            id: current.id,
+            fields: deletedFields,
+            base: current.base,
+            changedAt: new Date().toISOString(),
+            ...previous,
+            generation: crypto.randomUUID(),
+            error: undefined,
+            purge: true,
+            purgeRevision: previous ? undefined : (current.base ?? undefined),
+          }
+        })
+        await loadLocal(current.owner)
       })
-      if (response.status === 401) return expire()
-      if (response.status === 409) {
-        notify('The note changed. Refresh it before deleting permanently.', { error: true })
-        return
-      }
-      if (!response.ok) throw new Error('Could not delete note')
-      await local.dropSnapshot(current.owner, current.id).catch(storageError)
       if (owner() === current.owner) {
         ++listEpoch
         closeUnavailableNote(current.id)
-        notify('Note permanently deleted')
-        void safeList()
-        requestAnimationFrame(() => {
-          if (!showEditor())
-            collectionPanel?.querySelector<HTMLButtonElement>('[data-collection-back]')?.focus()
-        })
+        notify(
+          draftFor(current.id)?.purge ? 'Permanent deletion queued' : 'Note permanently deleted',
+        )
+        void upload()
       }
     } catch {
-      notify('Could not delete note. Try again when connected.', { error: true })
+      storageError()
     } finally {
       setDeletingNote(undefined)
     }
@@ -715,6 +859,7 @@ export default function App() {
               error: undefined,
             }
           })
+          if (pending.get(item.id) === item) pending.delete(item.id)
           if (saved && owner() === item.owner) {
             if (showEditor() && open()?.id === item.id && !readScreen().note)
               updateScreen('push', item.id)
@@ -726,7 +871,6 @@ export default function App() {
                 : current.map((item, i) => (i === index ? saved : item))
             })
           }
-          if (pending.get(item.id) === item) pending.delete(item.id)
           if (open()?.id === item.id && !pending.has(item.id))
             setStatus(saved ? 'Saved on device' : '')
         }
@@ -746,19 +890,77 @@ export default function App() {
     }, delay)
   }
 
-  async function upload() {
+  async function upload(reconcile = false) {
     const id = owner()
-    if (!id || !writable() || !authorized() || unavailable() || syncBusy || signingOut()) return
+    if (!id || !writable() || !authorized() || unavailable() || signingOut()) return
+    reconciliationRequested ||= reconcile
+    if (syncBusy) return
     syncBusy = true
+    const checkLocal = reconciliationRequested
+    reconciliationRequested = false
+    let uploadedSinceStart = false
     try {
-      await flushEdits()
-      let uploaded = false
+      if (!(await flushEdits())) return
+      await loadLocal(id)
       for (const candidate of drafts()) {
         if (!authorized() || owner() !== id || signingOut()) break
         if (candidate.conflict || candidate.error) continue
+        if (
+          candidate.purge &&
+          (candidate.purgeRevision || (candidate.base === null && !candidate.sent))
+        ) {
+          if (candidate.purgeRevision) {
+            const result = await fetch('/api/notes/' + candidate.id, {
+              method: 'DELETE',
+              headers: { 'If-Match': '"' + candidate.purgeRevision + '"' },
+              signal: AbortSignal.timeout(5000),
+            })
+            if (result.status === 401) {
+              expire()
+              break
+            }
+            if (result.status === 409) {
+              const remote = await fetch('/api/notes/' + candidate.id, {
+                signal: AbortSignal.timeout(5000),
+              })
+              if (remote.status === 401) {
+                expire()
+                break
+              }
+              if (remote.status !== 404 && !remote.ok) throw new Error('Deletion will retry')
+              if (remote.ok) {
+                const current: Note = await remote.json()
+                await ordered(async () => {
+                  await local.change(id, candidate.id, (draft) =>
+                    draft?.generation === candidate.generation
+                      ? {
+                          ...draft,
+                          purge: undefined,
+                          purgeRevision: undefined,
+                          conflict: { current },
+                        }
+                      : draft,
+                  )
+                  await local.cache(id, current, open()?.id ?? current.id)
+                })
+                notify('The note changed before it could be permanently deleted.', { error: true })
+                continue
+              }
+            } else if (!result.ok) throw new Error('Deletion will retry')
+          }
+          await ordered(() => local.finishPurge(candidate))
+          if (owner() === id) {
+            ++listEpoch
+            closeUnavailableNote(candidate.id)
+          }
+          uploadedSinceStart = true
+          continue
+        }
         const draft = await ordered(() =>
           local.change(id, candidate.id, (previous) => {
-            if (!previous || previous.sent || previous.conflict) return previous
+            if (!previous || previous.sent || previous.conflict || previous.purgeRevision)
+              return previous
+            if (previous.base === null && previous.fields.deleted) return previous
             return {
               ...previous,
               sent: {
@@ -786,9 +988,22 @@ export default function App() {
         }
         if (response.status === 409) {
           const conflict: { current: Note | null } = await response.json()
-          await ordered(() =>
-            local.change(id, draft.id, (current) => current && { ...current, conflict }),
-          )
+          const purged = await ordered(async () => {
+            const current = await local.change(id, draft.id, (latest) => {
+              if (latest?.sent?.mutation.mutationId !== sent.mutation.mutationId) return latest
+              if (latest.purge && conflict.current === null) return latest
+              return { ...latest, conflict, purge: undefined, purgeRevision: undefined }
+            })
+            if (current?.purge && conflict.current === null) {
+              await local.finishPurge(current)
+              return true
+            }
+            return false
+          })
+          if (purged) {
+            uploadedSinceStart = true
+            continue
+          }
           if (owner() === id)
             notify('A note changed on another device. Review the conflict to sync your draft.', {
               error: true,
@@ -798,20 +1013,21 @@ export default function App() {
         if ([400, 413, 422].includes(response.status)) {
           const problem: { error?: string } | null = await response.json().catch(() => null)
           const rejected = await ordered(() =>
-            local.change(
-              id,
-              draft.id,
-              (current) =>
-                current && {
-                  ...current,
-                  sent: undefined,
-                  error:
-                    current.generation === sent.generation
-                      ? (problem?.error ??
-                        'Server rejected this draft. Edit it or download a copy.')
-                      : undefined,
-                },
-            ),
+            local.change(id, draft.id, (current) => {
+              if (current?.sent?.mutation.mutationId !== sent.mutation.mutationId) return current
+              if (current.purge && sent.mutation.expectedRevision === null)
+                return { ...current, sent: undefined }
+              return {
+                ...current,
+                sent: undefined,
+                purge: undefined,
+                purgeRevision: undefined,
+                error:
+                  current.purge || current.generation === sent.generation
+                    ? (problem?.error ?? 'Server rejected this draft. Edit it or download a copy.')
+                    : undefined,
+              }
+            }),
           )
           if (rejected?.error && owner() === id) notify(rejected.error, { error: true })
           continue
@@ -839,6 +1055,27 @@ export default function App() {
               revision: ack.revision,
               updatedAt: ack.updatedAt,
             }
+            for (const { queryKey } of queryClient
+              .getQueryCache()
+              .findAll({ queryKey: ['notes', id] })) {
+              const params = new URLSearchParams(String(queryKey[2]))
+              const destination = params.get('folder')
+              const matches =
+                belongsTo(updated, params.get('view') as View) &&
+                (destination
+                  ? updated.folderId === destination
+                  : !params.has('unfiled') || !updated.folderId)
+              queryClient.setQueryData<CachedList>(
+                queryKey,
+                (data) =>
+                  data && {
+                    ...data,
+                    notes: data.notes.flatMap((note) =>
+                      note.id !== updated.id ? [note] : matches ? [{ ...note, ...updated }] : [],
+                    ),
+                  },
+              )
+            }
             setNotes((previous) => {
               const exists = previous.some(({ id }) => id === updated.id)
               if (!inView(updated)) return previous.filter(({ id }) => id !== updated.id)
@@ -856,21 +1093,33 @@ export default function App() {
               setStatus('Saved to server')
           }
         })
-        uploaded = true
+        uploadedSinceStart = true
+      }
+      if ((checkLocal || uploadedSinceStart) && authorized() && owner() === id && !signingOut()) {
+        await reconcileNotes(id, () => owner() === id && authorized() && !signingOut(), expire)
       }
       retryDelay = 1000
       await loadLocal(id)
-      if (uploaded) {
-        void safeList()
+      if (uploadedSinceStart) {
+        void queryClient.invalidateQueries({ queryKey: ['notes', id], refetchType: 'none' })
+        if (listInFlight) refreshAfterList = true
+        else void safeList(false, false)
         if (!folderBusy()) void loadFolders(id).catch(() => undefined)
       }
       if (
-        drafts().some((draft) => !draft.conflict && !draft.error) &&
+        (reconciliationRequested ||
+          drafts().some(
+            (draft) =>
+              !draft.conflict &&
+              !draft.error &&
+              (draft.purge || draft.sent || draft.base !== null || !draft.fields.deleted),
+          )) &&
         authorized() &&
         !pending.size
       )
         scheduleUpload(550)
     } catch {
+      reconciliationRequested ||= checkLocal || uploadedSinceStart
       await loadLocal(id).catch(storageError)
       scheduleUpload(retryDelay)
       retryDelay = Math.min(retryDelay * 2, 30000)
@@ -879,25 +1128,14 @@ export default function App() {
     }
   }
 
-  async function safeList(append = false) {
-    ++listRequests
-    setLoadingNotes(true)
-    try {
-      await list(append)
-      if (notice() === 'Could not refresh the notes list.') setNotice('')
-    } catch {
-      setNotice('Could not refresh the notes list.')
-    } finally {
-      setLoadingNotes(--listRequests > 0)
-    }
-  }
-
   async function refresh(manual = false) {
     if (refreshing() || signingIn() || signingOut()) {
       refreshAgain = true
+      refreshAgainManually ||= manual
       return
     }
     setRefreshing(true)
+    setManualRefresh(manual)
     try {
       let response: Response | undefined
       try {
@@ -912,7 +1150,8 @@ export default function App() {
         if (owner() && owner() !== account.id) {
           if (!(await flushEdits())) return
           setOpen(undefined)
-          setNotes([])
+          queryClient.clear()
+          clearList()
           setDrafts([])
           setFolders([])
           setShowEditor(false)
@@ -926,12 +1165,14 @@ export default function App() {
       if (owner()) {
         acquireWriter(owner()!)
         await loadLocal().catch(storageError)
-        if (authorized()) await loadFolders(owner()!).catch(() => undefined)
-        await safeList()
+        await Promise.all([
+          authorized() ? loadFolders(owner()!).catch(() => undefined) : undefined,
+          safeList(false, manual || displayedList() === undefined),
+        ])
         const restored = await restoreNoteFromUrl()
         if (authorized()) {
-          if (manual) await upload()
-          else void upload()
+          if (manual) await upload(true)
+          else void upload(true)
           const current = open()
           if (
             current &&
@@ -979,13 +1220,16 @@ export default function App() {
         }
       }
     } catch {
-      setNotice('Refresh paused. Reconnect or try again.')
+      if (manual) setNotice('Refresh paused. Reconnect or try again.')
     } finally {
       setRefreshing(false)
+      setManualRefresh(false)
       setReady(true)
       if (refreshAgain && !signingIn() && !signingOut()) {
+        const nextManual = refreshAgainManually
         refreshAgain = false
-        void refresh()
+        refreshAgainManually = false
+        void refresh(nextManual)
       }
     }
   }
@@ -1039,8 +1283,8 @@ export default function App() {
     setMustSignIn(false)
     setOpen(undefined)
     setDrafts([])
-    setNotes([])
-    setNext(null)
+    queryClient.clear()
+    clearList()
     setView('active')
     setFolder(undefined)
     setFolders([])
@@ -1101,7 +1345,7 @@ export default function App() {
     const currentId = open()?.id
     if (!currentId || !writable() || !(await flushEdits()) || open()?.id !== currentId) return
     const draft = activeDraft()
-    if (!draft?.conflict) return
+    if (!draft?.conflict || (!copy && !draft.conflict.current)) return
     const remote = draft.conflict.current
     if (copy) {
       const copyId = await create({ ...draft.fields, deleted: false }, true)
@@ -1174,7 +1418,7 @@ export default function App() {
         acquireWriter(owner()!)
         await loadLocal().catch(storageError)
         await loadFolders(owner()!, true).catch(() => undefined)
-        void safeList()
+        void safeList(false, false)
       }
       await refresh()
     })()
@@ -1235,15 +1479,20 @@ export default function App() {
       window.removeEventListener('focus', resume)
       document.removeEventListener('visibilitychange', visible)
       releaseWriter?.()
+      queryClient.clear()
     })
   })
 
   const visibleNotes = createMemo(() => {
     const cachedView = unavailable() || mustSignIn()
-    if (!cachedView && query().trim()) return notes()
+    if (!cachedView && query().trim()) return notes().filter((note) => !draftFor(note.id)?.purge)
     const ordered = new Map(notes().map((note) => [note.id, note]))
     const added: Summary[] = []
     for (const draft of drafts()) {
+      if (draft.purge) {
+        ordered.delete(draft.id)
+        continue
+      }
       if (!inView(draft.fields)) {
         ordered.delete(draft.id)
         continue
@@ -1381,7 +1630,7 @@ export default function App() {
     const queued = await ordered(async () => {
       const alreadyOpen = () => open()?.id === id
       const undoOpen = () => {
-        if (fields()[key] !== value) return false
+        if (activeDraft()?.purge || fields()[key] !== value) return false
         record({ [key]: !value })
         return true
       }
@@ -1394,6 +1643,7 @@ export default function App() {
       if (alreadyOpen()) return undoOpen()
       const edit = pending.get(id)
       const draft = saved.find((item) => item.id === id)
+      if (draft?.purge) return false
       const latest = edit?.fields() ?? draft?.fields ?? snapshot
       if (!latest || latest[key] !== value) return false
       const { title, document, folderId, pinned, archived, deleted } = latest
@@ -1417,7 +1667,8 @@ export default function App() {
 
   function changeNoteState(key: 'archived' | 'deleted', value: boolean, message: string) {
     const note = open()
-    if (!note || !writable() || signingOut()) return
+    if (!note || !writable() || signingOut() || activeDraft()?.purge || deletingNote() === note.id)
+      return
     record({ [key]: value })
     if (value) backToNotes('replace')
     void flushEdits().then((saved) => {
@@ -1609,8 +1860,9 @@ export default function App() {
                   setQuery(event.currentTarget.value)
                   updateScreen('replace', readScreen().note)
                   if (notesPanel) notesPanel.scrollTop = 0
-                  setLoadingNotes(true)
                   ++listEpoch
+                  listInFlight = undefined
+                  setLoadingNotes(false)
                   clearTimeout(listTimer)
                   listTimer = setTimeout(() => void safeList(), 220)
                 }}
@@ -1669,14 +1921,14 @@ export default function App() {
                     <Button
                       class="secondary"
                       disabled={loadingNotes()}
-                      onClick={() => void safeList(Boolean(next()))}
+                      onClick={() => void safeList()}
                     >
                       Retry loading notes
                     </Button>
                   </Show>
                 </div>
               </Show>
-              <Show when={opening() && !showEditor()}>
+              <Show when={opening() === 'remote' && !showEditor()}>
                 <p class="muted" role="status">
                   Opening note…
                 </p>
@@ -1722,7 +1974,7 @@ export default function App() {
                       class="icon-button"
                       title="Refresh notes list"
                       aria-label="Refresh notes list"
-                      disabled={refreshing() || signingOut()}
+                      disabled={manualRefresh() || signingOut()}
                       onClick={() => void refresh(true)}
                     >
                       <RefreshCw size={17} aria-hidden="true" />
@@ -1801,13 +2053,13 @@ export default function App() {
                   )
                 }}
               </For>
-              <Show when={next()}>
+              <Show when={next() && displayedList() === listParams().toString()}>
                 <Button
                   class="load-more"
-                  disabled={loadingNotes()}
+                  disabled={loadingMore()}
                   onClick={() => void safeList(true)}
                 >
-                  {loadingNotes() ? 'Loading more…' : 'Load more'}
+                  {loadingMore() ? 'Loading more…' : 'Load more'}
                   <ChevronDown size={15} />
                 </Button>
               </Show>
@@ -1871,10 +2123,14 @@ export default function App() {
                   folders={folders()}
                   canEdit={canEdit()}
                   canRestore={
-                    writable() && !signingOut() && !folderBusy() && deletingNote() !== note.id
+                    writable() &&
+                    !signingOut() &&
+                    !folderBusy() &&
+                    !activeDraft()?.purge &&
+                    deletingNote() !== note.id
                   }
                   canDeletePermanently={canDeletePermanently()}
-                  refreshing={refreshing() || deletingNote() === note.id}
+                  refreshing={manualRefresh() || deletingNote() === note.id}
                   exportingPdf={exportingPdf()}
                   onPrint={() => void exportPdf('print')}
                   onDownloadPdf={() => void exportPdf('download')}
@@ -2017,7 +2273,7 @@ export default function App() {
                           <ConfirmationDialog
                             trigger="Replace synced version"
                             triggerClass="secondary"
-                            disabled={!writable()}
+                            disabled={!writable() || !conflict().current}
                             title="Replace synced version?"
                             description="This will replace the synced version of this note with your draft."
                             confirmLabel="Replace synced version"
@@ -2104,8 +2360,9 @@ export default function App() {
           }
           confirmLabel="Move to Trash"
           onConfirm={() => {
-            if (noteToTrash() === open()?.id && canEdit())
-              changeNoteState('deleted', true, 'Note moved to Trash')
+            if (noteToTrash() !== open()?.id || !canEdit()) return
+            setNoteToTrash(undefined)
+            changeNoteState('deleted', true, 'Note moved to Trash')
           }}
         />
         <CreateMenu

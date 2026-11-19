@@ -142,6 +142,17 @@ export const mutation = z.object({
   expectedRevision: z.number().int().positive().nullable(),
   fields: noteFields,
 })
+export const reconciliationLimit = 100
+export const reconciliationResponse = z.object({
+  owner: z.string(),
+  notes: z.array(
+    z.object({
+      id: z.uuid(),
+      revision: z.number().int().positive(),
+      state: z.enum(['active', 'archived', 'trash']),
+    }),
+  ),
+})
 export type NoteFields = z.infer<typeof noteFields>
 export type Mutation = z.infer<typeof mutation>
 export type Note = NoteFields & { id: string; revision: number; updatedAt: string }
