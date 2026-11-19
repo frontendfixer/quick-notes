@@ -23,7 +23,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,webmanifest,woff2}'],
         // Keep the cache name stable for installations already using network navigation.
         cacheId: 'quick-notes-network-navigation',
         cleanupOutdatedCaches: false,
