@@ -12,7 +12,7 @@ import { createEffect, createSignal, Show, onCleanup, onMount } from 'solid-js'
 import { noteLink, type NoteFields } from '../../../packages/contracts'
 
 export default function RichEditor(props: {
-  initial: NoteFields['document']
+  initial: NoteFields['document'] | string
   editable: () => boolean
   changed: (read: () => JSONContent) => void
   composition: (active: boolean) => void
@@ -30,6 +30,7 @@ export default function RichEditor(props: {
       editable: props.editable(),
       injectCSS: false,
       content: props.initial,
+      contentType: typeof props.initial === 'string' ? 'markdown' : 'json',
       extensions: [
         StarterKit.configure({
           link: {

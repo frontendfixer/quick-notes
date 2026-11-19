@@ -1,6 +1,7 @@
 import { DropdownMenu } from '@kobalte/core/dropdown-menu'
 import {
   Archive,
+  BookOpen,
   ArrowDownAZ,
   ArrowDownWideNarrow,
   Check,
@@ -12,6 +13,7 @@ import {
   UserRound,
 } from 'lucide-solid'
 import { For, Show } from 'solid-js'
+import { writingGuideTitle } from './writing-guide'
 import type { View } from '../../../../packages/contracts'
 
 const accountViews = [
@@ -42,6 +44,7 @@ export function focusOpenedMenu(open: boolean, content: () => HTMLElement | unde
 export function AccountMenu(props: {
   view: View
   onView: (view: View) => void
+  onGuide: () => void
   hasDrafts: boolean
   onDownloadDrafts: () => void
   canSignOut: boolean
@@ -86,6 +89,10 @@ export function AccountMenu(props: {
             </DropdownMenu.Item>
           )}
         </For>
+        <DropdownMenu.Item class="ui-menu-item" onSelect={props.onGuide}>
+          <BookOpen size={16} aria-hidden="true" />
+          {writingGuideTitle}
+        </DropdownMenu.Item>
         <Show when={props.hasDrafts}>
           <DropdownMenu.Item class="ui-menu-item" onSelect={props.onDownloadDrafts}>
             <FileDown size={16} aria-hidden="true" />

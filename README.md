@@ -67,6 +67,8 @@ Approval creates the account and clears the pending password hash in the same tr
 
 ## Writing and recovery
 
+The [Writing in Quick Notes guide](docs/writing-notes.md) covers the editor, Markdown shortcuts, and organizing notes. Open it from the pinned entry or the Account menu.
+
 **Saved on device** means the local transaction completed. **Saved to server** means the server acknowledged the current draft. Drafts still pending when the browser profile is cleared or evicted are recoverable only from a prior download. One tab per account and browser profile edits at a time. Close the writable tab to hand off editing. Another device can edit concurrently and receives a conflict when its base revision is stale.
 
 Choose **Create folder** from the create menu. Notes created while a folder is selected go into it automatically. Use **Move note to folder** to organize existing notes. Deleting a folder moves its notes to Trash immediately. Restored notes return without a folder. Folder membership is included in exports.

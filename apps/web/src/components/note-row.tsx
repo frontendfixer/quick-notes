@@ -16,6 +16,8 @@ export function NoteRow(props: {
   title: string
   current: boolean
   folderName?: string
+  pinned?: boolean
+  preview?: string
   hasConflict: boolean
   onOpen: () => void
 }) {
@@ -32,24 +34,26 @@ export function NoteRow(props: {
       </span>
       <span class="row-copy">
         <strong>{props.title}</strong>
-        <Show when={props.note?.preview}>
-          <small class="row-preview">{props.note?.preview}</small>
+        <Show when={props.preview ?? props.note?.preview}>
+          <small class="row-preview">{props.preview ?? props.note?.preview}</small>
         </Show>
-        <small class="row-meta">
-          <Calendar size={12} aria-hidden="true" />
-          <span>{props.note ? dateFormat.format(new Date(props.note.updatedAt)) : ''}</span>
-          <Show when={props.folderName}>
-            <span aria-hidden="true">·</span>
-            <Folder size={12} aria-hidden="true" />
-            <span class="row-folder">{props.folderName}</span>
-          </Show>
-        </small>
+        <Show when={props.note}>
+          <small class="row-meta">
+            <Calendar size={12} aria-hidden="true" />
+            <span>{props.note ? dateFormat.format(new Date(props.note.updatedAt)) : ''}</span>
+            <Show when={props.folderName}>
+              <span aria-hidden="true">·</span>
+              <Folder size={12} aria-hidden="true" />
+              <span class="row-folder">{props.folderName}</span>
+            </Show>
+          </small>
+        </Show>
       </span>
       <span class="row-state">
         <Show when={props.hasConflict}>
           <CircleAlert size={14} aria-label="Conflict" />
         </Show>
-        <Show when={props.note?.pinned}>
+        <Show when={props.pinned ?? props.note?.pinned}>
           <Pin size={15} fill="currentColor" aria-label="Pinned" />
         </Show>
       </span>

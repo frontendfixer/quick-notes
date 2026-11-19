@@ -366,3 +366,20 @@
 .password-hint {
   margin: 6px 0 12px;
 }
+
+.writing-guide {
+  width: min(720px, calc(100vw - 24px));
+}
+
+.writing-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.writing-guide-body {
+  max-height: 65dvh;
+  overflow: auto;
+  margin-top: 16px;
+}

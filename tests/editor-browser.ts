@@ -451,6 +451,23 @@ ul[data-type="taskList"] > li { list-style: none; display: flex; gap: .5rem; }
   const printPage = await popup
   await page.waitForFunction(() => document.documentElement.dataset.printPdf === 'true')
   await printPage.close()
+  await button('Back to notes').click()
+  const guideTitle = 'Writing in Quick Notes'
+  const guideRow = button(guideTitle)
+  await guideRow.getByLabel('Pinned').waitFor()
+  await guideRow.click()
+  const guide = page.getByRole('dialog', { name: guideTitle })
+  await guide.getByRole('heading', { name: 'Type Markdown shortcuts' }).waitFor()
+  assert.equal(await guide.getByRole('textbox').getAttribute('contenteditable'), 'false')
+  await guide.getByRole('button', { name: 'Remove from note list' }).click()
+  await guideRow.waitFor({ state: 'hidden' })
+  await page.reload()
+  await button('Account options').click()
+  await page.getByRole('menuitem', { name: guideTitle, exact: true }).click()
+  await guide.getByRole('heading', { name: 'Type Markdown shortcuts' }).waitFor()
+  assert.equal(await guide.getByRole('button', { name: 'Remove from note list' }).count(), 0)
+  await guide.getByRole('button', { name: 'Close', exact: true }).click()
+  assert.equal(await guideRow.count(), 0)
   assert.deepEqual(errors, [])
   console.log(
     'Rich text, Markdown, clipboard, PDF download and print, autosave, refresh, and Trash deletion passed in Chromium.',

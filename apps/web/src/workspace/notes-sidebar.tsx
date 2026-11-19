@@ -12,6 +12,7 @@ import {
   FolderRow,
 } from '../components/folder-views'
 import { AccountMenu, SortMenu } from '../components/note-menus'
+import { writingGuideTitle, type createWritingGuide } from '../components/writing-guide'
 import { NoteRow } from '../components/note-row'
 import { ConfirmationDialog } from '../components/confirmation-dialog'
 
@@ -19,7 +20,7 @@ import type { Workspace } from '../workspace'
 import { noteTitle } from '../note-title'
 import { Reauthentication } from './reauthentication'
 
-type Props = Workspace['sidebar']
+type Props = Workspace['sidebar'] & { guide: ReturnType<typeof createWritingGuide> }
 
 export function NotesSidebar(props: Props) {
   const {
@@ -112,6 +113,7 @@ export function NotesSidebar(props: Props) {
       </Show>
     </>
   )
+  const showGuide = () => home() && !query().trim() && props.guide.pinned()
   const emptyHeadings: Record<View, string> = {
     active: 'No notes yet',
     archived: 'Archive is empty',
@@ -137,6 +139,7 @@ export function NotesSidebar(props: Props) {
         <AccountMenu
           view={view()}
           onView={changeView}
+          onGuide={() => props.guide.show(() => accountTrigger)}
           hasDrafts={drafts().length > 0 || status() === 'Save failed'}
           onDownloadDrafts={exportDrafts}
           canSignOut={writable() && !signingOut() && !unavailable()}
@@ -247,7 +250,7 @@ export function NotesSidebar(props: Props) {
               Offline · showing notes on this device
             </p>
           </Show>
-          <Show when={!collectionIsEmpty()}>
+          <Show when={showGuide() || !collectionIsEmpty()}>
             <div class="list-heading">
               <h2>
                 {query().trim()
@@ -298,46 +301,68 @@ export function NotesSidebar(props: Props) {
             </section>
           </Show>
           {folderFormControls()}
+          <Show when={showGuide()}>
+            <NoteRow
+              id="writing-guide"
+              note={undefined}
+              title={writingGuideTitle}
+              preview="Formatting, Markdown, and organizing notes"
+              current={false}
+              pinned
+              hasConflict={false}
+              onOpen={() =>
+                props.guide.show(() =>
+                  showGuide()
+                    ? sidebar?.querySelector<HTMLButtonElement>('[data-note-id="writing-guide"]')
+                    : accountTrigger,
+                )
+              }
+            />
+          </Show>
           <For
             each={visibleIds()}
             fallback={
-              <Show
-                when={!collectionIsEmpty()}
-                fallback={
-                  <EmptyCollection
-                    kind={collectionKind()}
-                    onBack={() => changeView('active')}
-                    mobile
-                    offline={unavailable() || mustSignIn()}
-                    canCreate={canCreate()}
-                    onCreate={newNote}
-                  />
-                }
-              >
-                <div class="list-empty" aria-busy={!ready() || loadingNotes()}>
-                  <span class="collection-icon" aria-hidden="true">
-                    <Show when={query().trim()} fallback={<span class="note-logo" />}>
-                      <Search size={18} />
+              <Show when={!showGuide()}>
+                <Show
+                  when={!collectionIsEmpty()}
+                  fallback={
+                    <EmptyCollection
+                      kind={collectionKind()}
+                      onBack={() => changeView('active')}
+                      mobile
+                      offline={unavailable() || mustSignIn()}
+                      canCreate={canCreate()}
+                      onCreate={newNote}
+                    />
+                  }
+                >
+                  <div class="list-empty" aria-busy={!ready() || loadingNotes()}>
+                    <span class="collection-icon" aria-hidden="true">
+                      <Show when={query().trim()} fallback={<span class="note-logo" />}>
+                        <Search size={18} />
+                      </Show>
+                    </span>
+                    <p role="status">
+                      {ready() && !loadingNotes()
+                        ? query().trim() && !unavailable()
+                          ? 'No matching notes'
+                          : folder()
+                            ? 'No notes in this folder'
+                            : home() && folders().length > 0
+                              ? 'No notes outside folders'
+                              : emptyHeadings[view()]
+                        : 'Loading notes…'}
+                    </p>
+                    <Show
+                      when={ready() && !loadingNotes() && !query().trim() && view() === 'active'}
+                    >
+                      <Button class="secondary" onClick={newNote} disabled={!canCreate()}>
+                        <Plus size={16} aria-hidden="true" />
+                        Create a note
+                      </Button>
                     </Show>
-                  </span>
-                  <p role="status">
-                    {ready() && !loadingNotes()
-                      ? query().trim() && !unavailable()
-                        ? 'No matching notes'
-                        : folder()
-                          ? 'No notes in this folder'
-                          : home() && folders().length > 0
-                            ? 'No notes outside folders'
-                            : emptyHeadings[view()]
-                      : 'Loading notes…'}
-                  </p>
-                  <Show when={ready() && !loadingNotes() && !query().trim() && view() === 'active'}>
-                    <Button class="secondary" onClick={newNote} disabled={!canCreate()}>
-                      <Plus size={16} aria-hidden="true" />
-                      Create a note
-                    </Button>
-                  </Show>
-                </div>
+                  </div>
+                </Show>
               </Show>
             }
           >

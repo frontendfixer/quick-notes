@@ -228,13 +228,13 @@ select {
   flex: none;
   align-items: center;
   gap: 7px;
-  min-height: 38px;
+  min-height: 32px;
   padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--input);
   color: var(--muted);
-  font-size: 0.81rem;
+  font-size: 0.75rem;
   font-weight: 550;
   white-space: nowrap;
 }

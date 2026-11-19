@@ -1,3 +1,4 @@
+import { createWritingGuide } from './components/writing-guide'
 import { Show } from 'solid-js'
 import { ActivityToasts } from './components/activity-toasts'
 import { AccountAccess } from './components/account-access'
@@ -43,6 +44,7 @@ export default function App() {
     title,
     unavailable,
   } = shell
+  const guide = createWritingGuide(owner)
   return (
     <>
       <UpdateDialog {...updateDialog} />
@@ -66,7 +68,8 @@ export default function App() {
             />
           }
         >
-          <NotesSidebar {...sidebar} />
+          <NotesSidebar {...sidebar} guide={guide} />
+          <guide.Guide />
           <NoteWorkspace {...editor} />
 
           <ConfirmationDialog
