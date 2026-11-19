@@ -89,14 +89,22 @@ try {
       await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
       await restart(page).waitFor()
       assert.equal(await restart(page).count(), 1)
-      assert.equal(await page.getByRole('region', { name: 'App update' }).count(), 1)
+      assert.equal(await page.getByRole('alertdialog', { name: 'Update available' }).count(), 1)
+      assert.equal(await version(page), 'A')
+
+      const dialog = page.getByRole('alertdialog', { name: 'Update available' })
+      await dialog
+        .getByText('Your changes are saved before the app reloads.', { exact: false })
+        .waitFor()
+      await dialog.getByRole('button', { name: 'Later', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
       assert.equal(await version(page), 'A')
       assert.equal(await body.textContent(), 'Before deployment')
-
       await page.evaluate(() => {
         document.documentElement.dataset.rejectDraft = 'true'
       })
       await body.fill('Before deployment and after the update appeared')
+      await page.getByRole('button', { name: 'Update available', exact: true }).click()
       await restart(page).click()
       await restart(page).waitFor()
       assert.equal(await version(page), 'A')
@@ -122,7 +130,7 @@ try {
       )
       await restart(other).waitFor()
       assert.equal(await restart(other).count(), 1)
-      assert.equal(await other.getByRole('region', { name: 'App update' }).count(), 1)
+      assert.equal(await other.getByRole('alertdialog', { name: 'Update available' }).count(), 1)
       assert.equal(await version(other), 'A')
       await restart(other).click()
       await other.waitForFunction(

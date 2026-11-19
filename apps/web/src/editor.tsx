@@ -1,5 +1,6 @@
 import { Alert } from '@kobalte/core/alert'
 import * as ContextMenu from '@kobalte/core/context-menu'
+import { useMenuContext } from '@kobalte/core/menu'
 import { Button } from '@kobalte/core/button'
 import * as Dialog from '@kobalte/core/dialog'
 import { ToggleButton } from '@kobalte/core/toggle-button'
@@ -30,7 +31,16 @@ import { Editor, Extension, type JSONContent } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
-import { For, createEffect, createMemo, createSignal, Show, onCleanup, onMount } from 'solid-js'
+import {
+  For,
+  createEffect,
+  createMemo,
+  createSignal,
+  Show,
+  onCleanup,
+  onMount,
+  type ParentProps,
+} from 'solid-js'
 import FormattingDock from './formatting-dock'
 import { notify } from './components/activity-toasts'
 import { TextInput } from './components/text-input'
@@ -69,6 +79,75 @@ const clipboardTools = [
 
 const modifier = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? 'Meta' : 'Control'
 const shortcutLabel = (keys: string) => `${modifier === 'Meta' ? 'Cmd' : 'Ctrl'}+${keys}`
+
+function EditorMenuTrigger(props: {
+  ref: (element: HTMLDivElement) => void
+  editable: boolean
+  editor: () => Editor | undefined
+  composition: (active: boolean) => void
+}) {
+  const menu = useMenuContext()
+
+  createEffect(() => {
+    if (!props.editable && menu.isOpen()) menu.close()
+  })
+
+  return (
+    <ContextMenu.Trigger
+      ref={props.ref}
+      class="document"
+      disabled={!props.editable}
+      onPointerDown={(event) => {
+        // Kobalte excludes the entire trigger from outside dismissal.
+        if (event.button === 0 && menu.isOpen()) menu.close()
+      }}
+      onKeyDown={(event: KeyboardEvent & { currentTarget: HTMLDivElement }) => {
+        if (
+          !props.editable ||
+          event.defaultPrevented ||
+          event.isComposing ||
+          (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10'))
+        )
+          return
+        const editor = props.editor()
+        if (!editor) return
+
+        event.preventDefault()
+        const caret = editor.view.coordsAtPos(editor.state.selection.head)
+        event.currentTarget.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            clientX: caret.left,
+            clientY: caret.bottom,
+          }),
+        )
+      }}
+      onCompositionStart={() => props.composition(true)}
+      onCompositionEnd={() => props.composition(false)}
+    />
+  )
+}
+
+function EditorMenuContent(props: ParentProps<{ focusEditor: () => void }>) {
+  const menu = useMenuContext()
+  return (
+    <ContextMenu.Content
+      class="ui-menu editor-context-menu"
+      aria-label="Edit note"
+      onCloseAutoFocus={(event) => event.preventDefault()}
+      onEscapeKeyDown={props.focusEditor}
+      onKeyDown={(event: KeyboardEvent) => {
+        if (event.key !== 'Tab') return
+        event.preventDefault()
+        menu.close()
+        props.focusEditor()
+      }}
+    >
+      {props.children}
+    </ContextMenu.Content>
+  )
+}
 
 export default function RichEditor(props: {
   initial: NoteFields['document']
@@ -320,23 +399,17 @@ export default function RichEditor(props: {
   return (
     <>
       <ContextMenu.Root modal={false}>
-        <ContextMenu.Trigger
+        <EditorMenuTrigger
           ref={(node) => {
             element = node
           }}
-          class="document"
-          disabled={!props.editable()}
-          onCompositionStart={() => props.composition(true)}
-          onCompositionEnd={() => props.composition(false)}
+          editor={() => editor}
+          editable={props.editable()}
+          composition={props.composition}
         />
         <Show when={props.editable()}>
           <ContextMenu.Portal>
-            <ContextMenu.Content
-              class="ui-menu editor-context-menu"
-              aria-label="Edit note"
-              onCloseAutoFocus={(event) => event.preventDefault()}
-              onEscapeKeyDown={() => editor?.view.focus()}
-            >
+            <EditorMenuContent focusEditor={() => editor?.view.focus()}>
               <ContextMenu.Group class="editor-context-history" aria-label="Edit history">
                 <For each={historyTools}>
                   {([label, Icon, command]) => (
@@ -386,7 +459,7 @@ export default function RichEditor(props: {
                   </ContextMenu.Item>
                 )}
               </For>
-            </ContextMenu.Content>
+            </EditorMenuContent>
           </ContextMenu.Portal>
         </Show>
       </ContextMenu.Root>
