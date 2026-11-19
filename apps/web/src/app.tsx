@@ -92,6 +92,7 @@ function download(name: string, data: unknown) {
 }
 
 export default function App() {
+  const [exportingPdf, setExportingPdf] = createSignal(false)
   const initialScreen = readScreen()
   const [joiningWaitlist, setJoiningWaitlist] = createSignal(
     new URLSearchParams(location.search).get('signup') === '1',
@@ -647,6 +648,32 @@ export default function App() {
       changedAt: new Date().toISOString(),
     })
     setStatus('Editing')
+  }
+
+  async function exportPdf(action: 'print' | 'download') {
+    if (!open() || exportingPdf()) return
+    const noteTitle = label(title())
+    const document = documentReader?.() ?? fields().document
+    let printWindow: Window | undefined
+    if (action === 'print') {
+      printWindow = window.open('', '_blank') ?? undefined
+      if (!printWindow) {
+        notify('Allow pop-ups to print this note.', { error: true })
+        return
+      }
+      printWindow.opener = null
+    }
+
+    setExportingPdf(true)
+    try {
+      const { exportNotePdf } = await import('./note-pdf')
+      await exportNotePdf(noteTitle, document, printWindow)
+    } catch {
+      printWindow?.close()
+      notify('Could not generate the note PDF.', { error: true })
+    } finally {
+      setExportingPdf(false)
+    }
   }
 
   function queueEdit(edit: PendingEdit) {
@@ -1848,6 +1875,9 @@ export default function App() {
                   }
                   canDeletePermanently={canDeletePermanently()}
                   refreshing={refreshing() || deletingNote() === note.id}
+                  exportingPdf={exportingPdf()}
+                  onPrint={() => void exportPdf('print')}
+                  onDownloadPdf={() => void exportPdf('download')}
                   onRefresh={() => void refresh(true)}
                   onDeletePermanently={() => void deletePermanently()}
                   title={label(title())}

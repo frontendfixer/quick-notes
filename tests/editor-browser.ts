@@ -117,6 +117,7 @@ try {
   await body.press('Shift+End')
   await body.press('Shift+F10')
   await editMenu.waitFor()
+  await page.waitForFunction(() => document.activeElement?.closest('[aria-label="Edit note"]'))
   await page.keyboard.press('ArrowDown')
   await editMenu.locator('[role="menuitem"]:focus').waitFor()
   await page.keyboard.press('Escape')
@@ -365,9 +366,94 @@ ul[data-type="taskList"] > li { list-style: none; display: flex; gap: .5rem; }
   notes.set(remote.id, remote)
   await button('Refresh notes list').click()
   await button('Remote journal').waitFor()
+  await button('Remote journal').click()
+  await body.click()
+  await body.press('ControlOrMeta+a')
+  await body.press('Backspace')
+  await page.keyboard.insertText('First line')
+  await body.press('Enter')
+  await page.keyboard.insertText('Second line')
+  await body.press('ControlOrMeta+a')
+  await body.press('ControlOrMeta+c')
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'First line\nSecond line')
+
+  const markdown = [
+    '#### Reference',
+    '',
+    '- [x] Test **Markdown**',
+    '',
+    '| Format | Works |',
+    '| :--- | ---: |',
+    '| Table | Yes |',
+    '',
+    '```ts',
+    'const works = true',
+    '```',
+    '',
+    '![Diagram](https://example.com/diagram.png)',
+  ].join('\n')
+  await page.route('https://example.com/diagram.png', (route) =>
+    route.fulfill({
+      path: 'apps/web/public/icon-192.png',
+      contentType: 'image/png',
+      headers: { 'access-control-allow-origin': '*' },
+    }),
+  )
+  await page.evaluate((source) => navigator.clipboard.writeText(source), markdown)
+  await body.getByText('First line', { exact: true }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Paste as Markdown', exact: true }).click()
+  const referenceHeading = body.getByRole('heading', { level: 4, name: 'Reference' })
+  await referenceHeading.waitFor()
+  assert.equal(await body.locator('td').last().textContent(), 'Yes')
+  assert.equal(await body.locator('pre code').textContent(), 'const works = true')
+  assert.equal(
+    await body.getByAltText('Diagram').getAttribute('src'),
+    'https://example.com/diagram.png',
+  )
+  await referenceHeading.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Copy as Markdown', exact: true }).click()
+  const copiedMarkdown = await page.evaluate(() => navigator.clipboard.readText())
+  assert.match(copiedMarkdown, /^#### Reference/m)
+  assert.match(copiedMarkdown, /\| Table\s+\| Yes\s+\|/)
+  assert.match(copiedMarkdown, /\[x\] Test \*\*Markdown\*\*/)
+  assert.ok(copiedMarkdown.includes('![Diagram](https://example.com/diagram.png)'))
+  const imageUrl = 'https://example.com/preview.webp?v=2'
+  await page.route(imageUrl, (route) => route.fulfill({ status: 204 }))
+  await page.evaluate((url) => navigator.clipboard.writeText(url), imageUrl)
+  await referenceHeading.click()
+  await body.press('End')
+  await body.press('ControlOrMeta+v')
+  await body.locator('img[src*="preview.webp"]').waitFor({ state: 'attached' })
+  const download = page.waitForEvent('download')
+  await button('Download PDF').click()
+  const pdf = await download
+  assert.equal(pdf.suggestedFilename(), 'Remote journal.pdf')
+  const downloadedPdf = await Bun.file(await pdf.path()).text()
+  assert.match(downloadedPdf, /^%PDF-/)
+  assert.match(downloadedPdf, /\/Subtype \/Image\b/)
+
+  await page.evaluate(() => {
+    const original = URL.createObjectURL
+    URL.createObjectURL = (blob) => {
+      if (blob instanceof Blob && blob.type === 'application/pdf') {
+        URL.createObjectURL = original
+        void blob.text().then((pdf) => {
+          document.documentElement.dataset.printPdf = String(
+            /\/OpenAction\b/.test(pdf) && /\/N \/Print\b/.test(pdf),
+          )
+        })
+      }
+      return original(blob)
+    }
+  })
+  const popup = page.context().waitForEvent('page')
+  await button('Print note').click()
+  const printPage = await popup
+  await page.waitForFunction(() => document.documentElement.dataset.printPdf === 'true')
+  await printPage.close()
   assert.deepEqual(errors, [])
   console.log(
-    'Rich text, autosave, manual refresh, and confirmed Trash deletion passed in Chromium.',
+    'Rich text, Markdown, clipboard, PDF download and print, autosave, refresh, and Trash deletion passed in Chromium.',
   )
 } finally {
   await browser.close()

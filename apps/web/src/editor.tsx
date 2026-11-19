@@ -31,6 +31,9 @@ import { Editor, Extension, type JSONContent } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
 import { TaskList, TaskItem } from '@tiptap/extension-list'
+import Image from '@tiptap/extension-image'
+import { TableKit } from '@tiptap/extension-table'
+import { Markdown } from '@tiptap/markdown'
 import {
   For,
   createEffect,
@@ -44,7 +47,7 @@ import {
 import FormattingDock from './formatting-dock'
 import { notify } from './components/activity-toasts'
 import { TextInput } from './components/text-input'
-import { noteLink, type NoteFields } from '../../../packages/contracts'
+import { noteFields, noteImage, noteLink, type NoteFields } from '../../../packages/contracts'
 
 const shortcuts = {
   Bold: 'B',
@@ -76,6 +79,44 @@ const clipboardTools = [
   ['Paste', Clipboard, 'V', 'paste'],
   ['Cut', Scissors, 'X', 'cut'],
 ] as const
+
+const NoteImage = Image.extend({
+  parseHTML() {
+    return [
+      {
+        tag: 'img[src]',
+        getAttrs: (element) =>
+          noteImage.safeParse(element.getAttribute('src')).success ? null : false,
+      },
+    ]
+  },
+  addInputRules: () => [],
+}).configure({ inline: true, HTMLAttributes: { referrerpolicy: 'no-referrer' } })
+
+function wrapStandaloneImages(node: JSONContent): JSONContent {
+  if (!node.content || node.type === 'paragraph' || node.type === 'heading') return node
+  return {
+    ...node,
+    // Tiptap's Markdown parser unwraps image-only paragraphs for its block image schema.
+    content: node.content.map((child) =>
+      child.type === 'image'
+        ? { type: 'paragraph', content: [child] }
+        : wrapStandaloneImages(child),
+    ),
+  }
+}
+
+function pasteImageUrl(editor: Editor, text: string | undefined) {
+  if (editor.state.selection.$from.parent.type.spec.code) return false
+  const url = noteImage.safeParse(text?.trim())
+  if (
+    !url.success ||
+    !/\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i.test(new URL(url.data).pathname)
+  )
+    return false
+
+  return editor.commands.setImage({ src: url.data })
+}
 
 const modifier = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? 'Meta' : 'Control'
 const shortcutLabel = (keys: string) => `${modifier === 'Meta' ? 'Cmd' : 'Ctrl'}+${keys}`
@@ -252,20 +293,64 @@ export default function RichEditor(props: {
       const items = await navigator.clipboard.read()
       const rich = items.find((item) => item.types.includes('text/html'))
       const plain = items.find((item) => item.types.includes('text/plain'))
-      const type = rich ? 'text/html' : 'text/plain'
-      const content = await (rich ?? plain)?.getType(type).then((blob) => blob.text())
+      const [html, text] = await Promise.all([
+        rich?.getType('text/html').then((blob) => blob.text()),
+        plain?.getType('text/plain').then((blob) => blob.text()),
+      ])
       if (
-        content &&
         !current.isDestroyed &&
         current.isEditable &&
         current.state.doc === doc &&
         current.state.selection.eq(selection)
       ) {
-        if (rich) current.view.pasteHTML(content)
-        else current.view.pasteText(content)
+        if (
+          !items.some((item) => item.types.some((type) => type.startsWith('image/'))) &&
+          pasteImageUrl(current, text)
+        )
+          return
+        if (html) current.view.pasteHTML(html)
+        else if (text) current.view.pasteText(text)
       }
     } catch {
       notify(`Use ${shortcutLabel('V')} to paste.`, { error: true })
+    }
+  }
+
+  async function markdownClipboardAction(action: 'copy' | 'paste') {
+    const current = editor
+    if (!current?.isEditable || !current.markdown) return
+    const { doc, selection } = current.state
+    try {
+      if (action === 'copy') {
+        const content = selection.empty ? doc.content : selection.content().content
+        await navigator.clipboard.writeText(
+          current.markdown.serialize({ type: 'doc', content: content.toJSON() ?? [] }),
+        )
+        return
+      }
+
+      const source = await navigator.clipboard.readText()
+      if (
+        !source ||
+        current.isDestroyed ||
+        !current.isEditable ||
+        current.state.doc !== doc ||
+        !current.state.selection.eq(selection)
+      )
+        return
+
+      const parsed = noteFields.shape.document.safeParse(
+        wrapStandaloneImages(current.markdown.parse(source)),
+      )
+      if (!parsed.success || !current.chain().focus().insertContent(parsed.data.content).run()) {
+        notify('Could not paste this Markdown. Check its links, images, and nesting.', {
+          error: true,
+        })
+      }
+    } catch {
+      notify(action === 'copy' ? 'Could not copy Markdown.' : 'Could not paste Markdown.', {
+        error: true,
+      })
     }
   }
 
@@ -277,12 +362,18 @@ export default function RichEditor(props: {
       content: props.initial,
       extensions: [
         StarterKit.configure({
-          heading: { levels: [1, 2, 3] },
-          link: { openOnClick: false, isAllowedUri: (url) => noteLink.safeParse(url).success },
+          link: {
+            openOnClick: false,
+            markdownLinks: true,
+            isAllowedUri: (url) => noteLink.safeParse(url).success,
+          },
         }),
         TaskList,
         TaskItem.configure({ nested: true }),
         Highlight,
+        NoteImage,
+        TableKit,
+        Markdown.configure({ markedOptions: { gfm: true } }),
         Extension.create({
           name: 'noteShortcuts',
           addKeyboardShortcuts() {
@@ -300,6 +391,18 @@ export default function RichEditor(props: {
       ],
       editorProps: {
         attributes: { 'aria-label': 'Note content', role: 'textbox', 'aria-multiline': 'true' },
+        handlePaste: (_view, event) =>
+          Boolean(
+            editor?.isEditable &&
+            !event.clipboardData?.files.length &&
+            pasteImageUrl(editor, event.clipboardData?.getData('text/plain')),
+          ),
+        clipboardTextSerializer: ({ content }) =>
+          content.textBetween(0, content.size, '\n', (node) => {
+            if (node.type.name === 'hardBreak') return '\n'
+            if (node.type.name === 'image') return node.attrs.alt ?? ''
+            return ''
+          }),
       },
       onUpdate({ editor }) {
         const document = editor.state.doc
@@ -441,6 +544,20 @@ export default function RichEditor(props: {
                   </ContextMenu.Item>
                 )}
               </For>
+              <ContextMenu.Item
+                class="ui-menu-item"
+                onSelect={() => void markdownClipboardAction('copy')}
+              >
+                <Copy size={16} aria-hidden="true" />
+                Copy as Markdown
+              </ContextMenu.Item>
+              <ContextMenu.Item
+                class="ui-menu-item"
+                onSelect={() => void markdownClipboardAction('paste')}
+              >
+                <Clipboard size={16} aria-hidden="true" />
+                Paste as Markdown
+              </ContextMenu.Item>
               <ContextMenu.Separator class="editor-context-separator" />
               <For each={inlineTools}>
                 {([label, Icon, mark, action]) => (

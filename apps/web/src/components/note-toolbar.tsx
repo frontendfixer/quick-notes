@@ -8,10 +8,12 @@ import {
   Check,
   CircleAlert,
   Cloud,
+  Download,
   Ellipsis,
   FileText,
   Folder as FolderIcon,
   Pin,
+  Printer,
   RefreshCw,
   RotateCcw,
   Trash2,
@@ -32,6 +34,9 @@ export function NoteToolbar(props: {
   canDeletePermanently: boolean
   title: string
   refreshing: boolean
+  exportingPdf: boolean
+  onPrint: () => void
+  onDownloadPdf: () => void
   onRefresh: () => void
   onDeletePermanently: () => void
   hasSavedNote: boolean
@@ -101,6 +106,24 @@ export function NoteToolbar(props: {
             <span>{props.saveLabel}</span>
           </span>
         </Show>
+        <Button
+          class="icon-button"
+          title="Print note"
+          aria-label="Print note"
+          disabled={props.exportingPdf}
+          onClick={props.onPrint}
+        >
+          <Printer size={17} aria-hidden="true" />
+        </Button>
+        <Button
+          class="icon-button"
+          title="Download PDF"
+          aria-label="Download PDF"
+          disabled={props.exportingPdf}
+          onClick={props.onDownloadPdf}
+        >
+          <Download size={17} aria-hidden="true" />
+        </Button>
         <Button
           class="icon-button"
           title="Refresh note"

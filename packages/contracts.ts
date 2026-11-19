@@ -25,9 +25,13 @@ export const noteLink = storedLink.refine((value) => {
     return false
   }
 })
+export const noteImage = noteLink.refine((value) => /^https?:\/\//i.test(value))
 const mark = z.union([
   z.object({ type: z.enum(['bold', 'italic', 'underline', 'strike', 'highlight', 'code']) }),
-  z.object({ type: z.literal('link'), attrs: z.object({ href: storedLink }) }),
+  z.object({
+    type: z.literal('link'),
+    attrs: z.object({ href: storedLink, title: z.string().nullish() }),
+  }),
 ])
 const empty = z.undefined().optional()
 const text = z.object({
@@ -35,11 +39,19 @@ const text = z.object({
   text: z.string().min(1),
   marks: z.array(mark).max(8).optional(),
 })
-const inline = z.union([text, z.object({ type: z.literal('hardBreak') })])
+const inline = z.union([
+  text,
+  z.object({ type: z.literal('hardBreak') }),
+  z.object({
+    type: z.literal('image'),
+    attrs: z.object({ src: noteImage, alt: z.string().nullish(), title: z.string().nullish() }),
+    marks: z.array(mark).max(8).optional(),
+  }),
+])
 const paragraph = z.object({ type: z.literal('paragraph'), content: z.array(inline).optional() })
 const heading = z.object({
   type: z.literal('heading'),
-  attrs: z.object({ level: z.number().int().min(1).max(3) }),
+  attrs: z.object({ level: z.number().int().min(1).max(6) }),
   content: z.array(inline).optional(),
 })
 const block: z.ZodType<DocumentNode> = z.lazy(() =>
@@ -65,8 +77,22 @@ const block: z.ZodType<DocumentNode> = z.lazy(() =>
       content: z.array(listItem).min(1),
     }),
     z.object({ type: z.literal('taskList'), content: z.array(taskItem).min(1) }),
+    z.object({ type: z.literal('table'), content: z.array(tableRow).min(1) }),
   ]),
 )
+const tableCell: z.ZodType<DocumentNode> = z.object({
+  type: z.enum(['tableCell', 'tableHeader']),
+  attrs: z
+    .object({
+      colspan: z.number().int().positive().optional(),
+      rowspan: z.number().int().positive().optional(),
+      colwidth: z.array(z.number()).nullish(),
+      align: z.enum(['left', 'center', 'right']).nullish(),
+    })
+    .optional(),
+  content: z.array(block).min(1),
+})
+const tableRow = z.object({ type: z.literal('tableRow'), content: z.array(tableCell).min(1) })
 const listItem: z.ZodType<DocumentNode> = z.object({
   type: z.literal('listItem'),
   attrs: empty,
@@ -124,6 +150,7 @@ export type Ack = { mutationId: string; revision: number; updatedAt: string }
 export type View = 'active' | 'archived' | 'trash'
 export function plainText(node: DocumentNode): string {
   if (node.text) return node.text
+  if (node.type === 'image') return String(node.attrs?.alt ?? '')
   if (node.type === 'hardBreak') return ' '
   if (node.type === 'horizontalRule') return ''
   return (
