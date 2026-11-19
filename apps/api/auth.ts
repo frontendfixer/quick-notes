@@ -4,12 +4,7 @@ import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../../packages/contrac
 import { db } from './db'
 import * as schema from './schema'
 
-export const origin = new URL(
-  process.env.APP_ORIGIN ??
-    (process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : 'http://localhost:3000'),
-).origin
+export const origin = new URL(process.env.APP_ORIGIN ?? 'http://localhost:3000').origin
 const configuredOrigin = new URL(origin)
 const loopbackHosts = ['localhost', '127.0.0.1']
 export const trustedOrigins =
