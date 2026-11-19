@@ -180,16 +180,28 @@
   width: 100%;
   margin: 0 0 13px;
   border: 0;
-  padding: 0 0 4px;
+  border-bottom: 1px solid currentColor;
+  padding: 0 0 13px;
   background: transparent;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: clamp(2.15rem, 3.8vw, 3.45rem);
   line-height: 1.08;
   font-weight: 500;
   letter-spacing: -0.065em;
+  field-sizing: content;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  resize: none;
+  overflow-wrap: anywhere;
+  color: inherit;
 }
 .note-title:focus {
   outline: none;
+}
+.note-title:focus-visible {
+  outline: 0;
+  border-bottom-color: var(--accent);
+  border-bottom-width: 2px;
 }
 .note-title::placeholder {
   color: var(--muted);
