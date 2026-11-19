@@ -108,7 +108,7 @@ export function NoteToolbar(props: {
         </Show>
         <Button
           class="icon-button"
-          title="Print note"
+          title="Print this note as a PDF"
           aria-label="Print note"
           disabled={props.exportingPdf}
           onClick={props.onPrint}
@@ -117,7 +117,7 @@ export function NoteToolbar(props: {
         </Button>
         <Button
           class="icon-button"
-          title="Download PDF"
+          title="Download this note as a PDF"
           aria-label="Download PDF"
           disabled={props.exportingPdf}
           onClick={props.onDownloadPdf}
@@ -140,6 +140,7 @@ export function NoteToolbar(props: {
               <>
                 <Button
                   class="secondary note-restore"
+                  title="Restore note from Trash"
                   disabled={!props.canRestore}
                   onClick={props.onRestore}
                 >
@@ -188,6 +189,7 @@ export function NoteToolbar(props: {
                 <Popover.Trigger
                   class="icon-button note-more"
                   aria-label="More note actions"
+                  title="More note actions"
                   ref={(node) => {
                     moreTrigger = node
                   }}

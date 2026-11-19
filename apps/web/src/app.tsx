@@ -1920,12 +1920,13 @@ export default function App() {
                     <div class="note-recovery">
                       <Button
                         class="secondary"
+                        title="Retry saving this note"
                         onClick={() => void flushEdits().then(() => upload())}
                       >
                         <RefreshCw size={16} aria-hidden="true" />
                         Retry save
                       </Button>
-                      <Button class="secondary" onClick={exportDrafts}>
+                      <Button class="secondary" title="Download all drafts" onClick={exportDrafts}>
                         <Download size={16} aria-hidden="true" />
                         Download all drafts
                       </Button>
@@ -1944,6 +1945,7 @@ export default function App() {
                       <div class="conflict-actions">
                         <Button
                           class="secondary"
+                          title="Retry saving this note"
                           disabled={!canEdit() || unavailable() || mustSignIn()}
                           onClick={() => {
                             record()
@@ -1952,7 +1954,11 @@ export default function App() {
                         >
                           Retry save
                         </Button>
-                        <Button class="secondary" onClick={exportDrafts}>
+                        <Button
+                          class="secondary"
+                          title="Download all drafts"
+                          onClick={exportDrafts}
+                        >
                           Download all drafts
                         </Button>
                       </div>
@@ -1967,7 +1973,10 @@ export default function App() {
                         </h2>
                         <p>Your draft is open below. Keep both to save it as a separate note.</p>
                         <Collapsible>
-                          <Collapsible.Trigger class="conflict-compare-trigger">
+                          <Collapsible.Trigger
+                            class="conflict-compare-trigger"
+                            title="Compare with synced version"
+                          >
                             Compare with synced version
                             <ChevronDown size={14} aria-hidden="true" />
                           </Collapsible.Trigger>
@@ -1999,6 +2008,7 @@ export default function App() {
                         <div class="conflict-actions">
                           <Button
                             class="secondary"
+                            title="Keep both versions as separate notes"
                             disabled={!writable()}
                             onClick={() => void resolveConflict(true)}
                           >
@@ -2013,7 +2023,11 @@ export default function App() {
                             confirmLabel="Replace synced version"
                             onConfirm={() => void resolveConflict(false)}
                           />
-                          <Button class="secondary" onClick={exportDrafts}>
+                          <Button
+                            class="secondary"
+                            title="Download all drafts"
+                            onClick={exportDrafts}
+                          >
                             <Download size={16} />
                             Download all drafts
                           </Button>

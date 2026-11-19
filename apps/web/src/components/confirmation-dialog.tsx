@@ -29,7 +29,7 @@ export function ConfirmationDialog(props: {
             trigger = node
           }}
           class={props.triggerClass}
-          title={props.triggerLabel}
+          title={props.triggerLabel ?? props.confirmLabel}
           aria-label={props.triggerLabel}
           disabled={props.disabled}
         >
@@ -42,12 +42,13 @@ export function ConfirmationDialog(props: {
           <AlertDialog.Title as="h2">{props.title}</AlertDialog.Title>
           <AlertDialog.Description>{props.description}</AlertDialog.Description>
           <div class="confirmation-actions">
-            <AlertDialog.CloseButton class="secondary" aria-label="Cancel">
+            <AlertDialog.CloseButton class="secondary" aria-label="Cancel" title="Cancel">
               Cancel
             </AlertDialog.CloseButton>
             <AlertDialog.CloseButton
               class="secondary danger-action"
               aria-label={props.confirmLabel}
+              title={props.confirmLabel}
               onClick={props.onConfirm}
             >
               {props.confirmLabel}

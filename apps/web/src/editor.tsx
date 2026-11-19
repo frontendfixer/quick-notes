@@ -518,6 +518,7 @@ export default function RichEditor(props: {
                   {([label, Icon, command]) => (
                     <ContextMenu.Item
                       class="ui-menu-item"
+                      title={`${label} (${shortcutLabel(command === 'undo' ? 'Z' : 'Shift+Z')})`}
                       disabled={!canUseHistory(command)}
                       onSelect={() => {
                         if (editor?.isEditable) editor.chain().focus()[command]().run()
@@ -534,6 +535,7 @@ export default function RichEditor(props: {
                 {([label, Icon, keys, command]) => (
                   <ContextMenu.Item
                     class="ui-menu-item"
+                    title={`${label} (${shortcutLabel(keys)})`}
                     aria-keyshortcuts={`${modifier}+${keys}`}
                     disabled={command !== 'paste' && (epoch(), editor?.state.selection.empty)}
                     onSelect={() => void clipboardAction(command)}
@@ -546,6 +548,7 @@ export default function RichEditor(props: {
               </For>
               <ContextMenu.Item
                 class="ui-menu-item"
+                title="Copy the selection or the whole note as Markdown"
                 onSelect={() => void markdownClipboardAction('copy')}
               >
                 <Copy size={16} aria-hidden="true" />
@@ -553,6 +556,7 @@ export default function RichEditor(props: {
               </ContextMenu.Item>
               <ContextMenu.Item
                 class="ui-menu-item"
+                title="Paste and format Markdown from the clipboard"
                 onSelect={() => void markdownClipboardAction('paste')}
               >
                 <Clipboard size={16} aria-hidden="true" />
@@ -564,6 +568,7 @@ export default function RichEditor(props: {
                   <ContextMenu.Item
                     class="ui-menu-item"
                     data-active={(epoch(), editor?.isActive(mark)) ? '' : undefined}
+                    title={`${label} (${shortcutLabel(shortcuts[label])})`}
                     aria-keyshortcuts={`${modifier}+${shortcuts[label]}`}
                     aria-haspopup={mark === 'link' ? 'dialog' : undefined}
                     onSelect={() => {
@@ -619,10 +624,10 @@ export default function RichEditor(props: {
                 </Alert>
               </Show>
               <div class="confirmation-actions">
-                <Dialog.CloseButton class="secondary" aria-label="Cancel">
+                <Dialog.CloseButton class="secondary" aria-label="Cancel" title="Cancel">
                   Cancel
                 </Dialog.CloseButton>
-                <Button type="submit" class="primary">
+                <Button type="submit" class="primary" title="Save link">
                   Save link
                 </Button>
               </div>

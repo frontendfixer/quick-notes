@@ -49,7 +49,7 @@ export function FolderPicker(props: {
           trigger = node
         }}
         aria-label="Move note to folder"
-        title={currentName()}
+        title={`Move note to folder (current: ${currentName()})`}
         disabled={props.disabled}
       >
         <FolderInput size={16} aria-hidden="true" />
