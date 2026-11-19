@@ -18,6 +18,7 @@ export async function reconcileNotes(owner: string, isCurrent: () => boolean, ex
     if (!response.ok) throw new Error('Could not reconcile notes')
     const result = reconciliationResponse.parse(await response.json())
     if (result.owner !== owner || !isCurrent()) return
+    // Membership in this account-scoped response is independent of the currently visible list.
     const remote = new Map(result.notes.map((note) => [note.id, note]))
     for (const id of batch) {
       if (!isCurrent()) return

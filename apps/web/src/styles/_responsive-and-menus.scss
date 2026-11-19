@@ -1,0 +1,308 @@
+@media (max-width: 900px) {
+  .sidebar-header {
+    position: sticky;
+    top: var(--app-top, 0px);
+    background: var(--sidebar);
+    box-shadow: 0 0 0 7px var(--sidebar);
+  }
+
+  .note-topbar {
+    --note-header-inset: 12px;
+    min-height: 60px;
+    gap: 8px;
+    padding: 7px var(--note-header-inset);
+  }
+
+  .note-location,
+  .note-actions {
+    gap: 8px;
+  }
+
+  .note-topbar .back,
+  .note-topbar .note-more {
+    width: 44px;
+    height: 44px;
+  }
+
+  .note-more-popover {
+    width: min(260px, calc(100vw - 24px));
+  }
+
+  .note-more-popover .note-action-list {
+    display: grid;
+    justify-items: stretch;
+    gap: 3px;
+    padding: 0;
+    border: 0;
+  }
+
+  .note-action-list .icon-button {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 44px;
+    padding-inline: 10px;
+    gap: 9px;
+    text-align: left;
+  }
+
+  .folder-picker-trigger {
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
+    padding-inline: 10px;
+  }
+
+  .folder-picker-trigger > span {
+    flex: 1;
+    text-align: left;
+  }
+
+  .picker-option,
+  .sort-option {
+    min-height: 44px;
+  }
+
+  .mobile-action-label {
+    display: inline;
+  }
+}
+
+.format-symbol {
+  font-size: 0.97rem;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+
+.reauth-description {
+  flex-basis: 100%;
+}
+
+.list-error {
+  padding: 0 6px 8px;
+}
+
+.confirmation-dialog .danger-action {
+  border-color: transparent;
+  color: #fff5ef;
+  background: #70332f;
+}
+
+.confirmation-dialog .danger-action:hover:not(:disabled) {
+  color: #fff5ef;
+  background: #863c36;
+}
+
+@media (max-width: 900px) {
+  .format-overflow {
+    display: grid;
+    grid-template-columns: repeat(3, 40px);
+    align-content: start;
+    width: max-content;
+  }
+}
+
+@media (max-width: 360px) {
+  .note-topbar {
+    --note-header-inset: 8px;
+  }
+
+  .note-context > svg {
+    display: none;
+  }
+}
+
+.field-root {
+  display: contents;
+}
+
+.conflict-compare-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-weight: 600;
+}
+
+.conflict-compare-trigger[data-expanded] svg {
+  transform: rotate(180deg);
+}
+
+.link-form {
+  display: grid;
+  gap: 12px;
+}
+
+.link-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.link-form input {
+  min-height: 38px;
+  width: 100%;
+  padding: 6px 9px;
+}
+
+.link-form .inline-error {
+  margin: 0;
+}
+
+.create-actions {
+  position: fixed;
+  z-index: 10;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.create-trigger {
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  transition: transform 120ms ease;
+}
+
+.create-trigger:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.create-trigger svg {
+  transition: transform 160ms cubic-bezier(0.2, 1.5, 0.5, 1);
+}
+
+.create-trigger[data-expanded] svg {
+  transform: rotate(45deg);
+}
+
+.create-popover {
+  z-index: 11;
+  min-width: 190px;
+  transform-origin: var(--kb-popper-content-transform-origin, bottom right);
+}
+
+.create-popover[data-expanded] {
+  animation: create-popover-in 180ms ease-out both;
+}
+
+.create-option {
+  min-height: 44px;
+}
+
+.create-option kbd {
+  display: none;
+  margin-inline-start: auto;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.app:has(.create-actions) .activity-region {
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px);
+}
+
+@media (min-width: 901px) {
+  .create-option kbd {
+    display: inline;
+  }
+
+  .create-option > span {
+    flex: 1;
+    margin-inline-end: 12px;
+  }
+
+  .note {
+    padding-bottom: calc(146px + env(safe-area-inset-bottom));
+  }
+
+  .format-dock {
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 64px + var(--dock-keyboard, 0px));
+  }
+
+  .app:has(.create-actions) .activity-region-editor {
+    inset-inline-start: 14px;
+    inset-inline-end: auto;
+    bottom: max(14px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 900px) {
+  .create-actions[data-editor] {
+    display: none;
+  }
+
+  .sidebar .notes {
+    padding-bottom: 54px;
+  }
+}
+
+@keyframes create-popover-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.025);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .create-trigger,
+  .create-trigger svg {
+    transition: none;
+  }
+
+  .create-popover[data-expanded] {
+    animation: none;
+  }
+}
+
+.editor-context-menu {
+  z-index: 14;
+  min-width: min(220px, calc(100vw - 16px));
+  max-height: min(var(--kb-popper-content-available-height, 100dvh), calc(100dvh - 16px));
+  overflow-y: auto;
+
+  .ui-menu-item {
+    min-height: 32px;
+  }
+
+  .ui-menu-item[data-active] {
+    color: var(--accent);
+  }
+
+  kbd {
+    margin-inline-start: auto;
+    padding-inline-start: 12px;
+    font: inherit;
+    font-size: 0.75rem;
+    opacity: 0.72;
+  }
+}
+
+.editor-context-separator {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.editor-context-history {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+
+  .ui-menu-item {
+    justify-content: center;
+  }
+}

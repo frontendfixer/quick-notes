@@ -1,0 +1,434 @@
+.workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  background: var(--paper);
+}
+.empty {
+  flex: 1;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  text-align: center;
+  min-height: 70dvh;
+  padding: 28px 20px 11dvh;
+}
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 65px;
+  height: 65px;
+  border-radius: 18px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.empty h1 {
+  margin: 16px 0 0;
+  font-size: 1.45rem;
+  letter-spacing: -0.045em;
+}
+.empty p {
+  margin: 8px 0 20px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.note-topbar {
+  position: sticky;
+  z-index: 3;
+  top: var(--app-top, 0px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  gap: 12px;
+  padding: 9px clamp(16px, 3vw, 36px);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.note-location,
+.note-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.note-location {
+  flex: 1;
+  gap: 12px;
+}
+
+.note-context {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+
+.note-context > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-actions {
+  justify-content: flex-end;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.note-topbar .back,
+.note-topbar .note-more {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input);
+  color: var(--text);
+}
+
+.note-topbar .back:hover:not(:disabled),
+.note-topbar .note-more:hover:not(:disabled),
+.note-topbar .note-more[aria-expanded='true'] {
+  background: var(--hover);
+}
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--muted);
+  border-radius: 8px;
+}
+.icon-button[aria-pressed='true'],
+.danger-action:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.save-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--input);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.save-problem {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.note-restore,
+.note-unarchive {
+  min-height: 40px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.note-restore:hover:not(:disabled),
+.note-unarchive:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+@media (max-width: 480px) {
+  .note-actions .save-chip > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .note-unarchive {
+    width: 40px;
+    padding: 0;
+  }
+
+  .note-unarchive span {
+    display: none;
+  }
+}
+
+.note-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.note {
+  width: 100%;
+  padding: clamp(20px, 3vw, 42px) clamp(21px, 4vw, 58px) calc(82px + env(safe-area-inset-bottom));
+}
+.note-title {
+  display: block;
+  width: 100%;
+  margin: 0 0 13px;
+  border: 0;
+  padding: 0 0 4px;
+  background: transparent;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(2.15rem, 3.8vw, 3.45rem);
+  line-height: 1.08;
+  font-weight: 500;
+  letter-spacing: -0.065em;
+}
+.note-title:focus {
+  outline: none;
+}
+.note-title::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+.format-dock {
+  position: fixed;
+  z-index: 6;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock-keyboard, 0px));
+  --format-trigger-size: 47px;
+  --format-panel-gap: 6px;
+}
+.format-trigger {
+  display: grid;
+  place-items: center;
+  width: var(--format-trigger-size);
+  height: var(--format-trigger-size);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--accent);
+  color: var(--accent-text);
+  box-shadow: var(--shadow);
+}
+.format-trigger:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.format-trigger[aria-expanded='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.format-panel {
+  position: absolute;
+  right: calc(var(--format-trigger-size) + var(--format-panel-gap));
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateX(7px);
+  visibility: hidden;
+  pointer-events: none;
+}
+.format-panel[data-visible] {
+  visibility: visible;
+}
+.format-panel[aria-hidden='false'] {
+  pointer-events: auto;
+}
+.format-panel button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 39px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.format-panel button[aria-pressed='true'],
+.format-panel button[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.format-overflow {
+  bottom: calc(var(--format-trigger-size) + var(--format-panel-gap));
+  flex-direction: column;
+  max-height: var(--dock-height, 300px);
+  width: 48px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  transform: translateY(7px);
+}
+.format-overflow:focus-within {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.document {
+  overflow-wrap: anywhere;
+  font-size: clamp(1rem, 1.6vw, 1.12rem);
+  line-height: 1.7;
+}
+.tiptap {
+  min-height: 48dvh;
+  padding: 2px 0 0;
+  white-space: pre-wrap;
+  outline: none;
+}
+.tiptap ::selection {
+  background-color: var(--accent);
+  color: var(--accent-text);
+}
+.tiptap > :first-child {
+  margin-top: 0;
+}
+.tiptap h1,
+.tiptap h2,
+.tiptap h3 {
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+}
+.tiptap p {
+  margin-block: 0 0.125em;
+}
+.tiptap[contenteditable='true']
+  > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted);
+  content: 'Start writing…';
+}
+.tiptap ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 6px;
+}
+.tiptap ul[data-type='taskList'] > li {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.tiptap ul[data-type='taskList'] > li > div {
+  min-width: 0;
+}
+.tiptap ul[data-type='taskList'] > li > label > input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.tiptap blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1em;
+  border-inline-start: 3px solid var(--line);
+}
+.tiptap pre,
+.tiptap :not(pre) > code {
+  background: var(--input);
+  border-radius: 5px;
+}
+.tiptap :not(pre) > code {
+  padding: 0.12em 0.28em;
+}
+.tiptap pre {
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+.tiptap hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin-block: 1.25em;
+}
+.tiptap mark {
+  background: #f6e3a0;
+  color: #312719;
+}
+.tiptap img {
+  max-inline-size: 100%;
+  block-size: auto;
+}
+.tiptap table {
+  inline-size: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.tiptap :is(th, td) {
+  padding: 0.3em 0.55em;
+  border: 1px solid var(--line);
+}
+.tiptap :is(th, td) > p:last-child {
+  margin-block-end: 0;
+}
+.editor-loading {
+  min-height: 48px;
+}
+.message,
+.reauth,
+.conflict {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.workspace > .message,
+.workspace > .reauth {
+  margin: 10px 14px 0;
+}
+.message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inline-error {
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+.reauth {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.reauth input {
+  min-height: 36px;
+  padding: 5px 8px;
+}
+.sidebar .reauth {
+  margin-bottom: 10px;
+}
+.sidebar .reauth input {
+  width: 100%;
+}
+.conflict {
+  margin-bottom: 22px;
+}
+.conflict h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+}
+.conflict h2 svg {
+  margin-right: 6px;
+  color: var(--accent);
+}
+.conflict pre {
+  white-space: pre-wrap;
+}
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}

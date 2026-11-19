@@ -1,6 +1,8 @@
 {
   "name": "quick-notes",
   "private": true,
+  "license": "MIT",
+  "author": "Lakshmikanta Patra",
   "type": "module",
   "scripts": {
     "build": "bun --bun vite build",

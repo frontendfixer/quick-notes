@@ -1,6 +1,23 @@
 # Quick Notes
 
-Quick Notes is a private rich-text notes PWA. Use Chrome on Android or Chromium on Linux to install it from the browser menu. The **On device** view lists notes available without internet, including pending drafts.
+Quick Notes is a self-hosted, offline-capable notes app. Write in a rich-text editor, organize notes into folders, and pick up your work on another device when sync is available. Install it from a supported Chromium browser’s app menu, or use it in the browser.
+
+![Quick Notes on desktop with a folder sidebar and a travel checklist open](docs/screenshots/desktop.png)
+
+## Features
+
+- **Write and share.** Format headings, lists, checklists, links, tables, and code. Copy or paste Markdown from the editor’s context menu. Download a note as a PDF or print it.
+- **Organize.** Group notes in folders, pin important notes, search synced notes, and archive finished work. Trash stays recoverable until you explicitly delete a note permanently.
+- **Work offline.** The installed app can reopen locally saved drafts and recently cached notes. It saves edits on the device first and syncs them when the server is reachable.
+- **Keep browsing during sync.** Lists and folders stay visible during background refresh. If two devices edit the same note, you can compare versions and keep your draft as a separate note.
+- **Self-host.** Each account has its own notes and folders. The instance owner provisions accounts or approves requests through the signup waitlist.
+
+<details>
+<summary>Mobile screenshot</summary>
+
+<img src="docs/screenshots/mobile.png" width="320" alt="Quick Notes on mobile in dark mode with a travel checklist open">
+
+</details>
 
 ## Run locally
 
@@ -24,9 +41,9 @@ For Vite development, run `APP_ORIGIN=http://localhost:5173 bun run start` along
 
 ## Host privately
 
-Build static assets with `bun install --frozen-lockfile` and `bun run build`; run migrations once and run `bun run start` from the project directory. Terminate TLS at a reverse proxy, keep Bun behind it, and set `APP_ORIGIN` to the external HTTPS origin. Keep API routes and the shell on that origin. Serve the worker and HTML with revalidation and retain prior hashed assets during a rollout. Use a TLS database URL for a remote database. If the reverse proxy overwrites a client-IP header, set `TRUSTED_CLIENT_IP_HEADER` to its name so login throttling can operate per client. With no header configured, login throttling uses a shared bucket. Set up database backups with a restore drill and restrict production credentials and provisioning access.
+Build static assets with `bun install --frozen-lockfile` and `bun run build`. Apply migrations and run `bun run start` from the project directory. Terminate TLS at a reverse proxy, keep Bun behind it, and set `APP_ORIGIN` to the external HTTPS origin. Keep API routes and the shell on that origin. Serve the worker and HTML with revalidation and retain prior hashed assets during a rollout. Use a TLS database URL for a remote database. If the reverse proxy overwrites a client-IP header, set `TRUSTED_CLIENT_IP_HEADER` to its name so login throttling can operate per client. With no header configured, login throttling uses a shared bucket. Set up database backups with a restore drill and restrict production credentials and provisioning access.
 
-For password recovery, run `bun run account:reset-password you@example.com` and pass the new password via stdin as in the provisioning example. The reset revokes existing sessions. Signup is available through the provisioning command.
+For password recovery, run `bun run account:reset-password you@example.com` and pass the new password via stdin as in the provisioning example. The reset revokes existing sessions. Use the provisioning command or approve a signup request to create an account.
 
 ## Approve signup requests
 
@@ -52,9 +69,13 @@ Approval creates the account and clears the pending password hash in the same tr
 
 **Saved on device** means the local transaction completed. **Saved to server** means the server acknowledged the current draft. Drafts still pending when the browser profile is cleared or evicted are recoverable only from a prior download. One tab per account and browser profile edits at a time. Close the writable tab to hand off editing. Another device can edit concurrently and receives a conflict when its base revision is stale.
 
-Create a private folder from **Folders** in the sidebar. Notes created while a folder is selected go into it automatically. Use **Move note to folder** to organize existing notes. Deleting a folder moves its notes to Trash immediately. Restored notes return without a folder. Folder membership is included in exports.
+Choose **Create folder** from the create menu. Notes created while a folder is selected go into it automatically. Use **Move note to folder** to organize existing notes. Deleting a folder moves its notes to Trash immediately. Restored notes return without a folder. Folder membership is included in exports.
 
-When a conflict appears, review the server text, then save your draft as a new note or explicitly replace the reviewed version. **Download drafts** includes data still in memory and locally committed changes. **Export notes** downloads the server copy in versioned JSON. To restore a server export into a provisioned account, run `bun run backup:restore you@example.com backup.json`. This creates new note copies and retains formatting, archive, trash and pin states. Recovery JSON is readable and can also be used to recover a draft manually.
+When a conflict appears, review the server text, then save your draft as a new note or explicitly replace the reviewed version. **Download drafts** includes data still in memory and locally committed changes. While signed in, open `/api/export` on your instance to download a versioned JSON backup of your server notes and folders. To restore a server export into a provisioned account, run `bun run backup:restore you@example.com backup.json`. This creates new note copies and retains formatting, archive, trash and pin states. Recovery JSON is readable and can also be used to recover a draft manually.
+
+## Architecture
+
+The web app uses Solid, Tiptap, TanStack Query, and IndexedDB. A Hono API runs on Bun and stores synced data in PostgreSQL. The architecture guide explains how the cache, drafts, and server revisions interact. [Architecture guide](docs/architecture.md)
 
 ## Verify
 
@@ -62,10 +83,6 @@ When a conflict appears, review the server text, then save your draft as a new n
 - `bun test` for the document contract. With a migrated disposable database and configured environment, run `QUICK_NOTES_INTEGRATION=1 bun test` for session and API tests.
 - With the production server running against a disposable database, run `bun tests/browser.ts` for the Chromium PWA test. Set `CHROMIUM_BIN` if Chromium is installed elsewhere. Integration and browser tests create test accounts and notes. Run `bun tests/benchmark.ts` against that server for the Linux Chromium latency sample.
 
-### Verification on 2026-11-18
+## License and credit
 
-The pinned build uses Solid 1.9.19 because the published Solid Vite plugin declares a Solid 1.x peer dependency. The production shell JavaScript was about 42 KiB gzip and the editor is a separate precached chunk.
-
-Type checking, the production build, clean PostgreSQL 18 migrations, Bun SQL over TLS, API integration, backup restore, password reset and session revocation passed. Headless Chromium verified local save retry after a simulated quota error, idempotent upload after losing a server acknowledgement, recovery of three drafts after closing and reopening offline, and separate device conflict recovery.
-
-On Linux Chromium 155, using a loopback API and 20 samples per document size, P95 warm-cache startup was 218 ms. P95 cached note opening was 108 ms for 10 KiB and 72 ms for 100 KiB. Across these samples the higher P95 was 27 ms to the typing paint proxy, 67 ms to local commit and 788 ms to server acknowledgement. These are headless results. Physical Android installation, keyboard and lifecycle checks, and desktop installation and assistive-technology checks remain release gates.
+Quick Notes was created by Lakshmikanta Patra. The MIT License allows use, modification, and redistribution, including commercial use, as long as copies or substantial portions include the original copyright and permission notices. See [LICENSE](LICENSE).
