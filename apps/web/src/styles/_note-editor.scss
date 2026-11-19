@@ -180,7 +180,7 @@
   width: 100%;
   margin: 0 0 13px;
   border: 0;
-  border-bottom: 1px solid currentColor;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 40%, transparent);
   padding: 0 0 13px;
   background: transparent;
   font-family: Georgia, 'Times New Roman', serif;
